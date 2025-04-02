@@ -5,7 +5,7 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, "dist"),
     filename: "index.umd.js",
-    library: "GmtChartsGrowup", 
+    library: "itp", 
     libraryTarget: "umd", 
     globalObject: "this",
   },

@@ -84,3 +84,64 @@ export function criarGraficoBarra(ctx, dados, opcoesPersonalizadas = {}) {
 
     new Chart(ctx, configuracaoPadrao);
 }
+
+export function criarGraficoMisto(ctx, dados, opcoesPersonalizadas = {}) {
+    const configuracaoPadrao = {
+        type: 'bar',
+        data: {
+            labels: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
+            datasets: [
+                {
+                    type: 'bar',
+                    label: dados.labelBarra || 'Barras',
+                    data: dados.dataBarra,
+                    backgroundColor: dados.backgroundColorBarra || ['#FF6384', '#36A2EB', '#FFCE56'],
+                    borderColor: dados.borderColorBarra || ['#FF3B57', '#1A7CE2', '#FFB800'],
+                    borderWidth: 1
+                },
+                {
+                    type: 'line',
+                    label: dados.labelLinha || 'Linha',
+                    data: dados.dataLinha,
+                    borderColor: dados.borderColorLinha || '#4A90E2',
+                    backgroundColor: dados.backgroundColorLinha || 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        font: {
+                            size: 14,
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 10
+                    }
+                }
+            },
+            ...opcoesPersonalizadas
+        }
+    };
+
+    new Chart(ctx, configuracaoPadrao);
+}
+
