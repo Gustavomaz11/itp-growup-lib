@@ -1,6 +1,6 @@
 import Chart from 'chart.js/auto';
 
-export function criarGraficoRosca(ctx, dados, opcoesPersonalizadas = {}) {
+export function criarGraficoRosca(ctx, dados, chave,opcoesPersonalizadas = {}) {
     const configuracaoPadrao = {
         type: 'doughnut',
         data: {
@@ -38,7 +38,7 @@ export function criarGraficoRosca(ctx, dados, opcoesPersonalizadas = {}) {
     new Chart(ctx, configuracaoPadrao);
 }
 
-export function criarGraficoBarra(ctx, dados, opcoesPersonalizadas = {}) {
+export function criarGraficoBarra(ctx, dados, chave,opcoesPersonalizadas = {}) {
     const configuracaoPadrao = {
         type: 'bar',
         data: {
