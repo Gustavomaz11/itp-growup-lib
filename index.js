@@ -1,7 +1,6 @@
 import Chart from 'chart.js/auto';
 
 const chartsRegistry = {}; // Registro de gráficos por chave
-const originalData = {}; // Armazena os dados originais dos gráficos
 
 export function criarGraficoRosca(
   ctx,
@@ -11,19 +10,15 @@ export function criarGraficoRosca(
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
-    originalData[chave] = {
-      labels: [...dados.labels],
-      datasets: [...dados.data], // Armazena os dados corretamente
-    };
   }
 
   const configuracaoPadrao = {
     type: 'doughnut',
     data: {
-      labels: dados.labels,
+      labels: dados.labels || ['Item 1', 'Item 2', 'Item 3'],
       datasets: [
         {
-          data: dados.data.map(Number), // Garante que os valores sejam numéricos
+          data: dados.data,
           backgroundColor: dados.backgroundColor || [
             '#FF6384',
             '#36A2EB',
@@ -42,8 +37,20 @@ export function criarGraficoRosca(
       plugins: {
         legend: {
           position: 'top',
-          labels: { font: { size: 14 }, usePointStyle: true },
+          labels: {
+            font: {
+              size: 14,
+            },
+            usePointStyle: true,
+          },
           onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
+        },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return `${context.label}: ${context.raw}%`;
+            },
+          },
         },
       },
       cutout: 80,
@@ -63,20 +70,15 @@ export function criarGraficoBarra(
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
-    originalData[chave] = {
-      labels: [...dados.labels],
-      datasets: [...dados.data],
-    };
   }
 
   const configuracaoPadrao = {
     type: 'bar',
     data: {
-      labels: dados.labels,
       datasets: [
         {
-          label: 'Atendimentos', // Corrigido: Label agora aparece corretamente no tooltip e legenda
-          data: dados.data.map(Number),
+          label: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
+          data: dados.data,
           backgroundColor: dados.backgroundColor || [
             '#FF6384',
             '#36A2EB',
@@ -92,18 +94,18 @@ export function criarGraficoBarra(
       plugins: {
         legend: {
           position: 'top',
-          labels: { font: { size: 14 }, usePointStyle: true },
+          labels: {
+            font: {
+              size: 14,
+            },
+            usePointStyle: true,
+          },
           onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
             label: function (context) {
-              // Agora exibe a categoria correta no tooltip
-              let label = context.dataset.label || '';
-              if (context.parsed.y !== null) {
-                label += `: ${context.parsed.y}`;
-              }
-              return label;
+              return `${context.dataset.label}: ${context.raw}`;
             },
           },
         },
@@ -111,7 +113,9 @@ export function criarGraficoBarra(
       scales: {
         y: {
           beginAtZero: true,
-          ticks: { stepSize: 10 },
+          ticks: {
+            stepSize: 10,
+          },
         },
       },
       ...opcoesPersonalizadas,
@@ -123,41 +127,16 @@ export function criarGraficoBarra(
 }
 
 function handleFilter(chave, labelSelecionada) {
-  if (!originalData[chave]) {
-    console.error(
-      `Erro: Os dados originais para '${chave}' não foram encontrados.`,
-    );
-    return;
-  }
+  chartsRegistry[chave].forEach((chart) => {
+    const labels = chart.data.labels;
+    const datasets = chart.data.datasets;
 
-  Object.keys(chartsRegistry).forEach((key) => {
-    chartsRegistry[key].forEach((chart) => {
-      const labels = chart.data.labels;
-      const datasets = chart.data.datasets;
-      const originalDataset = originalData[key]?.datasets;
-
-      if (!originalDataset) {
-        console.error(`Erro: Não há dataset original para '${key}'`);
-        return;
-      }
-
-      datasets.forEach((dataset, datasetIndex) => {
-        dataset.data = labels.map((label, index) => {
-          if (chave === 'prioridade' && label === labelSelecionada) {
-            return originalDataset[index];
-          } else if (chave !== 'prioridade') {
-            const correspondente = originalData['prioridade']?.datasets[index];
-            return correspondente === labelSelecionada
-              ? originalDataset[index]
-              : 0;
-          }
-          return 0;
-        });
-      });
-
-      chart.update();
+    datasets.forEach((dataset) => {
+      dataset.data = dataset.data.map((value, index) =>
+        labels[index] === labelSelecionada ? value : 0,
+      );
     });
+
+    chart.update();
   });
 }
-
-export default { criarGraficoRosca, criarGraficoBarra };
