@@ -87,7 +87,6 @@ export function criarGraficoBarra(
       labels: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
       datasets: [
         {
-          label: 'Dados',
           data: dados.data,
           backgroundColor: dados.backgroundColor || [
             '#FF6384',
