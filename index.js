@@ -13,17 +13,17 @@ export function criarGraficoRosca(
     chartsRegistry[chave] = [];
     originalData[chave] = {
       labels: [...dados.labels],
-      datasets: dados.data.map((dataset) => [...dataset]),
+      datasets: [...dados.data], // Armazena os dados corretamente
     };
   }
 
   const configuracaoPadrao = {
     type: 'doughnut',
     data: {
-      labels: dados.labels || ['Item 1', 'Item 2', 'Item 3'],
+      labels: dados.labels,
       datasets: [
         {
-          data: dados.data,
+          data: dados.data.map(Number), // Garante que os valores sejam numéricos
           backgroundColor: dados.backgroundColor || [
             '#FF6384',
             '#36A2EB',
@@ -42,18 +42,8 @@ export function criarGraficoRosca(
       plugins: {
         legend: {
           position: 'top',
-          labels: {
-            font: { size: 14 },
-            usePointStyle: true,
-          },
+          labels: { font: { size: 14 }, usePointStyle: true },
           onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
-        },
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              return `${context.label}: ${context.raw}%`;
-            },
-          },
         },
       },
       cutout: 80,
@@ -75,17 +65,18 @@ export function criarGraficoBarra(
     chartsRegistry[chave] = [];
     originalData[chave] = {
       labels: [...dados.labels],
-      datasets: dados.data.map((dataset) => [...dataset]),
+      datasets: [...dados.data],
     };
   }
 
   const configuracaoPadrao = {
     type: 'bar',
     data: {
-      labels: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
+      labels: dados.labels,
       datasets: [
         {
-          data: dados.data,
+          label: 'Atendimentos', // Corrigido: Label agora aparece corretamente no tooltip e legenda
+          data: dados.data.map(Number),
           backgroundColor: dados.backgroundColor || [
             '#FF6384',
             '#36A2EB',
@@ -101,16 +92,18 @@ export function criarGraficoBarra(
       plugins: {
         legend: {
           position: 'top',
-          labels: {
-            font: { size: 14 },
-            usePointStyle: true,
-          },
+          labels: { font: { size: 14 }, usePointStyle: true },
           onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
             label: function (context) {
-              return `${context.dataset.label}: ${context.raw}`;
+              // Agora exibe a categoria correta no tooltip
+              let label = context.dataset.label || '';
+              if (context.parsed.y !== null) {
+                label += `: ${context.parsed.y}`;
+              }
+              return label;
             },
           },
         },
@@ -130,21 +123,32 @@ export function criarGraficoBarra(
 }
 
 function handleFilter(chave, labelSelecionada) {
+  if (!originalData[chave]) {
+    console.error(
+      `Erro: Os dados originais para '${chave}' não foram encontrados.`,
+    );
+    return;
+  }
+
   Object.keys(chartsRegistry).forEach((key) => {
     chartsRegistry[key].forEach((chart) => {
       const labels = chart.data.labels;
       const datasets = chart.data.datasets;
-      const originalDataset = originalData[key].datasets;
+      const originalDataset = originalData[key]?.datasets;
+
+      if (!originalDataset) {
+        console.error(`Erro: Não há dataset original para '${key}'`);
+        return;
+      }
 
       datasets.forEach((dataset, datasetIndex) => {
         dataset.data = labels.map((label, index) => {
           if (chave === 'prioridade' && label === labelSelecionada) {
-            return originalDataset[datasetIndex][index];
+            return originalDataset[index];
           } else if (chave !== 'prioridade') {
-            const correspondente =
-              originalData['prioridade'].datasets[0][index];
+            const correspondente = originalData['prioridade']?.datasets[index];
             return correspondente === labelSelecionada
-              ? originalDataset[datasetIndex][index]
+              ? originalDataset[index]
               : 0;
           }
           return 0;
@@ -155,3 +159,5 @@ function handleFilter(chave, labelSelecionada) {
     });
   });
 }
+
+export default { criarGraficoRosca, criarGraficoBarra };
