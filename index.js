@@ -13,7 +13,7 @@ export function criarGraficoRosca(
     chartsRegistry[chave] = [];
     originalData[chave] = {
       labels: [...dados.labels],
-      datasets: dados.data.slice(),
+      datasets: dados.data.map((dataset) => [...dataset]),
     };
   }
 
@@ -43,9 +43,7 @@ export function criarGraficoRosca(
         legend: {
           position: 'top',
           labels: {
-            font: {
-              size: 14,
-            },
+            font: { size: 14 },
             usePointStyle: true,
           },
           onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
@@ -77,7 +75,7 @@ export function criarGraficoBarra(
     chartsRegistry[chave] = [];
     originalData[chave] = {
       labels: [...dados.labels],
-      datasets: dados.data.slice(),
+      datasets: dados.data.map((dataset) => [...dataset]),
     };
   }
 
@@ -104,9 +102,7 @@ export function criarGraficoBarra(
         legend: {
           position: 'top',
           labels: {
-            font: {
-              size: 14,
-            },
+            font: { size: 14 },
             usePointStyle: true,
           },
           onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
@@ -122,9 +118,7 @@ export function criarGraficoBarra(
       scales: {
         y: {
           beginAtZero: true,
-          ticks: {
-            stepSize: 10,
-          },
+          ticks: { stepSize: 10 },
         },
       },
       ...opcoesPersonalizadas,
@@ -136,27 +130,28 @@ export function criarGraficoBarra(
 }
 
 function handleFilter(chave, labelSelecionada) {
-  chartsRegistry[chave].forEach((chart) => {
-    const labels = chart.data.labels;
-    const datasets = chart.data.datasets;
-    const originalDataset = originalData[chave].datasets;
+  Object.keys(chartsRegistry).forEach((key) => {
+    chartsRegistry[key].forEach((chart) => {
+      const labels = chart.data.labels;
+      const datasets = chart.data.datasets;
+      const originalDataset = originalData[key].datasets;
 
-    // Verifica se o gráfico já está filtrado
-    const isFiltered = datasets[0].data.some(
-      (value, index) =>
-        labels[index] === labelSelecionada && value !== originalDataset[index],
-    );
+      datasets.forEach((dataset, datasetIndex) => {
+        dataset.data = labels.map((label, index) => {
+          if (chave === 'prioridade' && label === labelSelecionada) {
+            return originalDataset[datasetIndex][index];
+          } else if (chave !== 'prioridade') {
+            const correspondente =
+              originalData['prioridade'].datasets[0][index];
+            return correspondente === labelSelecionada
+              ? originalDataset[datasetIndex][index]
+              : 0;
+          }
+          return 0;
+        });
+      });
 
-    datasets.forEach((dataset) => {
-      dataset.data = dataset.data.map((value, index) =>
-        isFiltered
-          ? originalDataset[index]
-          : labels[index] === labelSelecionada
-          ? value
-          : 0,
-      );
+      chart.update();
     });
-
-    chart.update();
   });
 }
