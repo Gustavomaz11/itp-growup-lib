@@ -1,6 +1,12 @@
 import Chart from 'chart.js/auto';
 
-export function criarGraficoRosca(ctx, dados, chave,opcoesPersonalizadas = {}) {
+const chartsRegistry = {}; // Registro de gráficos por chave
+
+export function criarGraficoRosca(ctx, dados, chave, opcoesPersonalizadas = {}) {
+    if (!chartsRegistry[chave]) {
+        chartsRegistry[chave] = [];
+    }
+
     const configuracaoPadrao = {
         type: 'doughnut',
         data: {
@@ -19,8 +25,10 @@ export function criarGraficoRosca(ctx, dados, chave,opcoesPersonalizadas = {}) {
                     labels: {
                         font: {
                             size: 14,
-                        }
-                    }
+                        },
+                        usePointStyle: true,
+                    },
+                    onClick: (e, legendItem) => handleFilter(chave, legendItem.text)
                 },
                 tooltip: {
                     callbacks: {
@@ -35,16 +43,21 @@ export function criarGraficoRosca(ctx, dados, chave,opcoesPersonalizadas = {}) {
         }
     };
 
-    new Chart(ctx, configuracaoPadrao);
+    const chartInstance = new Chart(ctx, configuracaoPadrao);
+    chartsRegistry[chave].push(chartInstance);
 }
 
-export function criarGraficoBarra(ctx, dados, chave,opcoesPersonalizadas = {}) {
+export function criarGraficoBarra(ctx, dados, chave, opcoesPersonalizadas = {}) {
+    if (!chartsRegistry[chave]) {
+        chartsRegistry[chave] = [];
+    }
+
     const configuracaoPadrao = {
         type: 'bar',
         data: {
             labels: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
             datasets: [{
-                label: dados.labels || 'Dados',
+                label: 'Dados',
                 data: dados.data,
                 backgroundColor: dados.backgroundColor || ['#FF6384', '#36A2EB', '#FFCE56'],
                 borderColor: dados.borderColor || ['#FF3B57', '#1A7CE2', '#FFB800'],
@@ -59,8 +72,10 @@ export function criarGraficoBarra(ctx, dados, chave,opcoesPersonalizadas = {}) {
                     labels: {
                         font: {
                             size: 14,
-                        }
-                    }
+                        },
+                        usePointStyle: true,
+                    },
+                    onClick: (e, legendItem) => handleFilter(chave, legendItem.text)
                 },
                 tooltip: {
                     callbacks: {
@@ -82,5 +97,21 @@ export function criarGraficoBarra(ctx, dados, chave,opcoesPersonalizadas = {}) {
         }
     };
 
-    new Chart(ctx, configuracaoPadrao);
+    const chartInstance = new Chart(ctx, configuracaoPadrao);
+    chartsRegistry[chave].push(chartInstance);
+}
+
+function handleFilter(chave, labelSelecionada) {
+    chartsRegistry[chave].forEach(chart => {
+        const labels = chart.data.labels;
+        const datasets = chart.data.datasets;
+        
+        datasets.forEach(dataset => {
+            dataset.data = dataset.data.map((value, index) => 
+                labels[index] === labelSelecionada ? value : 0
+            );
+        });
+
+        chart.update();
+    });
 }
