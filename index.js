@@ -1,21 +1,15 @@
 import Chart from 'chart.js/auto';
 
-// Objeto para armazenar o estado das labels ocultadas
-const estadoLabelsOcultadas = {};
-
-function criarGrafico(ctx, tipo, dados, chave, opcoesPersonalizadas = {}) {
-    if (!estadoLabelsOcultadas[chave]) {
-        estadoLabelsOcultadas[chave] = new Set();
-    }
-
+export function criarGraficoRosca(ctx, dados, opcoesPersonalizadas = {}) {
     const configuracaoPadrao = {
-        type: tipo,
+        type: 'doughnut',
         data: {
-            labels: dados.labels,
-            datasets: dados.datasets.map(dataset => ({
-                ...dataset,
-                data: dataset.data
-            }))
+            labels: dados.labels || ['Item 1', 'Item 2', 'Item 3'],
+            datasets: [{
+                data: dados.data,
+                backgroundColor: dados.backgroundColor || ['#FF6384', '#36A2EB', '#FFCE56'],
+                hoverBackgroundColor: dados.hoverBackgroundColor || ['#FF577F', '#4A90E2', '#FFD700'],
+            }]
         },
         options: {
             responsive: true,
@@ -25,24 +19,47 @@ function criarGrafico(ctx, tipo, dados, chave, opcoesPersonalizadas = {}) {
                     labels: {
                         font: {
                             size: 14,
-                        },
-                        usePointStyle: true,
-                        generateLabels: (chart) => {
-                            const originalLabels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                            return originalLabels.map(label => ({
-                                ...label,
-                                hidden: estadoLabelsOcultadas[chave].has(label.text)
-                            }));
-                        },
-                    },
-                    onClick: (e, legendItem, legend) => {
-                        const label = legendItem.text;
-                        if (estadoLabelsOcultadas[chave].has(label)) {
-                            estadoLabelsOcultadas[chave].delete(label);
-                        } else {
-                            estadoLabelsOcultadas[chave].add(label);
                         }
-                        atualizarGraficos(chave);
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.label}: ${context.raw}%`;
+                        }
+                    }
+                }
+            },
+            cutout: 80,
+            ...opcoesPersonalizadas
+        }
+    };
+
+    new Chart(ctx, configuracaoPadrao);
+}
+
+export function criarGraficoBarra(ctx, dados, opcoesPersonalizadas = {}) {
+    const configuracaoPadrao = {
+        type: 'bar',
+        data: {
+            labels: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
+            datasets: [{
+                label: dados.labels || 'Dados',
+                data: dados.data,
+                backgroundColor: dados.backgroundColor || ['#FF6384', '#36A2EB', '#FFCE56'],
+                borderColor: dados.borderColor || ['#FF3B57', '#1A7CE2', '#FFB800'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        font: {
+                            size: 14,
+                        }
                     }
                 },
                 tooltip: {
@@ -53,41 +70,17 @@ function criarGrafico(ctx, tipo, dados, chave, opcoesPersonalizadas = {}) {
                     }
                 }
             },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 10
+                    }
+                }
+            },
             ...opcoesPersonalizadas
         }
     };
 
-    const chart = new Chart(ctx, configuracaoPadrao);
-    chart.chave = chave;
-    return chart;
-}
-
-export function criarGraficoRosca(ctx, dados, chave, opcoesPersonalizadas = {}) {
-    return criarGrafico(ctx, 'doughnut', dados, chave, opcoesPersonalizadas);
-}
-
-export function criarGraficoBarra(ctx, dados, chave, opcoesPersonalizadas = {}) {
-    return criarGrafico(ctx, 'bar', dados, chave, opcoesPersonalizadas);
-}
-
-export function criarGraficoMisto(ctx, dados, chave, opcoesPersonalizadas = {}) {
-    return criarGrafico(ctx, 'bar', dados, chave, opcoesPersonalizadas);
-}
-
-function atualizarGraficos(chave) {
-    Chart.helpers.each(Chart.instances, instance => {
-        if (instance.chave === chave) {
-            instance.data.datasets.forEach(dataset => {
-                dataset.data = dataset.originalData ? dataset.originalData.slice() : dataset.data;
-            });
-            instance.data.labels.forEach((label, index) => {
-                if (estadoLabelsOcultadas[chave].has(label)) {
-                    instance.data.datasets.forEach(dataset => {
-                        dataset.data[index] = null;
-                    });
-                }
-            });
-            instance.update();
-        }
-    });
+    new Chart(ctx, configuracaoPadrao);
 }
