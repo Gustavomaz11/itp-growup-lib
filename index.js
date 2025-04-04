@@ -1,15 +1,20 @@
 import Chart from 'chart.js/auto';
 
 const chartsRegistry = {}; // Registro de gráficos por chave
+let response = null;
 
 export function criarGraficoRosca(
   ctx,
   dados,
   chave,
+  obj,
   opcoesPersonalizadas = {},
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
+  }
+  if (!response) {
+    response = obj;
   }
 
   const configuracaoPadrao = {
@@ -43,7 +48,7 @@ export function criarGraficoRosca(
             },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
+          onClick: (e, legendItem) => filtro(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
@@ -66,6 +71,7 @@ export function criarGraficoBarra(
   ctx,
   dados,
   chave,
+  obj,
   opcoesPersonalizadas = {},
 ) {
   if (!chartsRegistry[chave]) {
@@ -100,7 +106,7 @@ export function criarGraficoBarra(
             },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) => handleFilter(chave, legendItem.text),
+          onClick: (e, legendItem) => filtro(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
@@ -126,17 +132,41 @@ export function criarGraficoBarra(
   chartsRegistry[chave].push(chartInstance);
 }
 
-function handleFilter(chave, labelSelecionada) {
+function filtro(chave, labelSelecionada) {
   chartsRegistry[chave].forEach((chart) => {
     const labels = chart.data.labels;
     const datasets = chart.data.datasets;
 
+    // Filtro baseado na label selecionada (ex: "Sul", "SP", "2024")
+    const dados_filtrados = response.filter((item) =>
+      Object.values(item).includes(labelSelecionada),
+    );
+
+    console.log('Label selecionada:', labelSelecionada);
+    console.log('Dados filtrados:', JSON.stringify(dados_filtrados, null, 2));
+
+    // Atualiza os dados do gráfico com base na label
     datasets.forEach((dataset) => {
-      dataset.data = dataset.data.map((value, index) =>
-        labels[index] === labelSelecionada ? value : 0,
+      dataset.data = dataset.data.map((valor, index) =>
+        labels[index] === labelSelecionada ? valor : 0,
       );
     });
 
     chart.update();
   });
 }
+
+// function handleFilter(chave, labelSelecionada, obj) {
+//   chartsRegistry[chave].forEach((chart) => {
+//     const labels = chart.data.labels;
+//     const datasets = chart.data.datasets;
+
+//     datasets.forEach((dataset) => {
+//       dataset.data = dataset.data.map((value, index) =>
+//         labels[index] === labelSelecionada ? value : 0,
+//       );
+//     });
+
+//     chart.update();
+//   });
+// }
