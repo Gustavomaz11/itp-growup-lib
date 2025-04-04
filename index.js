@@ -1,7 +1,8 @@
 import Chart from 'chart.js/auto';
 
 const chartsRegistry = {}; // Registro de gráficos por chave
-let response = null;
+const originalData = {}; // Dados brutos por chave
+const filtrosAtivos = {}; // Filtros aplicados por chave
 
 export function criarGraficoRosca(
   ctx,
@@ -12,15 +13,14 @@ export function criarGraficoRosca(
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
-  }
-  if (!response) {
-    response = obj;
+    originalData[chave] = obj;
+    filtrosAtivos[chave] = [];
   }
 
   const configuracaoPadrao = {
     type: 'doughnut',
     data: {
-      labels: dados.labels || ['Item 1', 'Item 2', 'Item 3'],
+      labels: dados.labels,
       datasets: [
         {
           data: dados.data,
@@ -43,17 +43,16 @@ export function criarGraficoRosca(
         legend: {
           position: 'top',
           labels: {
-            font: {
-              size: 14,
-            },
+            font: { size: 14 },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) => filtro(chave, legendItem.text),
+          onClick: (e, legendItem) =>
+            aplicarFiltroPorChave(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
             label: function (context) {
-              return `${context.label}: ${context.raw}%`;
+              return `${context.label}: ${context.raw}`;
             },
           },
         },
@@ -76,14 +75,17 @@ export function criarGraficoBarra(
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
+    originalData[chave] = obj;
+    filtrosAtivos[chave] = [];
   }
 
   const configuracaoPadrao = {
     type: 'bar',
     data: {
+      labels: dados.labels,
       datasets: [
         {
-          label: dados.labels || ['Categoria 1', 'Categoria 2', 'Categoria 3'],
+          label: dados.label || 'Dados',
           data: dados.data,
           backgroundColor: dados.backgroundColor || [
             '#FF6384',
@@ -101,17 +103,16 @@ export function criarGraficoBarra(
         legend: {
           position: 'top',
           labels: {
-            font: {
-              size: 14,
-            },
+            font: { size: 14 },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) => filtro(chave, legendItem.text),
+          onClick: (e, legendItem) =>
+            aplicarFiltroPorChave(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
             label: function (context) {
-              return `${context.dataset.label}: ${context.raw}`;
+              return `${context.label}: ${context.raw}`;
             },
           },
         },
@@ -120,7 +121,7 @@ export function criarGraficoBarra(
         y: {
           beginAtZero: true,
           ticks: {
-            stepSize: 10,
+            stepSize: 1,
           },
         },
       },
@@ -132,41 +133,37 @@ export function criarGraficoBarra(
   chartsRegistry[chave].push(chartInstance);
 }
 
-function filtro(chave, labelSelecionada) {
+function aplicarFiltroPorChave(chave, labelSelecionada) {
+  // Alternar o filtro (ativa ou desativa)
+  if (filtrosAtivos[chave].includes(labelSelecionada)) {
+    filtrosAtivos[chave] = filtrosAtivos[chave].filter(
+      (f) => f !== labelSelecionada,
+    );
+  } else {
+    filtrosAtivos[chave].push(labelSelecionada);
+  }
+
+  const dadosOriginais = originalData[chave];
+
+  const dadosFiltrados =
+    filtrosAtivos[chave].length > 0
+      ? dadosOriginais.filter((item) =>
+          filtrosAtivos[chave].every((filtro) =>
+            Object.values(item).includes(filtro),
+          ),
+        )
+      : dadosOriginais;
+
+  // Atualiza todos os gráficos da chave com os dados filtrados
   chartsRegistry[chave].forEach((chart) => {
     const labels = chart.data.labels;
-    const datasets = chart.data.datasets;
-
-    // Filtro baseado na label selecionada (ex: "Sul", "SP", "2024")
-    const dados_filtrados = response.filter((item) =>
-      Object.values(item).includes(labelSelecionada),
-    );
-
-    console.log('Label selecionada:', labelSelecionada);
-    console.log('Dados filtrados:', JSON.stringify(dados_filtrados, null, 2));
-
-    // Atualiza os dados do gráfico com base na label
-    datasets.forEach((dataset) => {
-      dataset.data = dataset.data.map((valor, index) =>
-        labels[index] === labelSelecionada ? valor : 0,
-      );
+    chart.data.datasets.forEach((dataset) => {
+      dataset.data = labels.map((label) => {
+        return dadosFiltrados.filter((item) =>
+          Object.values(item).includes(label),
+        ).length;
+      });
     });
-
     chart.update();
   });
 }
-
-// function handleFilter(chave, labelSelecionada, obj) {
-//   chartsRegistry[chave].forEach((chart) => {
-//     const labels = chart.data.labels;
-//     const datasets = chart.data.datasets;
-
-//     datasets.forEach((dataset) => {
-//       dataset.data = dataset.data.map((value, index) =>
-//         labels[index] === labelSelecionada ? value : 0,
-//       );
-//     });
-
-//     chart.update();
-//   });
-// }
