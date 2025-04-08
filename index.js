@@ -9,7 +9,7 @@ export function criarGraficoRosca(
   dados,
   chave,
   obj,
-  opcoesPersonalizadas = {}
+  opcoesPersonalizadas = {},
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
@@ -72,7 +72,7 @@ export function criarGraficoBarra(
   chave,
   obj,
   labelPersonalizada = [],
-  opcoesPersonalizadas = {}
+  opcoesPersonalizadas = {},
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
@@ -80,10 +80,9 @@ export function criarGraficoBarra(
     filtrosAtivos[chave] = [];
   }
 
-  // Cria um dataset por funcionário
   const datasets = dados.data.map((valor, index) => ({
     label: labelPersonalizada[index] || `Item ${index + 1}`,
-    data: dados.labels.map((_, i) => (i === index ? valor : 0)), // só mostra valor na posição do funcionário
+    data: dados.labels.map((_, i) => (i === index ? valor : 0)),
     backgroundColor: Array.isArray(dados.backgroundColor)
       ? dados.backgroundColor[index]
       : dados.backgroundColor || '#36A2EB',
@@ -119,7 +118,7 @@ export function criarGraficoBarra(
       },
       scales: {
         x: {
-          stacked: true,
+          stacked: false, // Removido empilhamento
           ticks: {
             autoSkip: false,
             maxRotation: 45,
@@ -128,7 +127,7 @@ export function criarGraficoBarra(
         },
         y: {
           beginAtZero: true,
-          stacked: true,
+          stacked: false, // Removido empilhamento
         },
       },
       onClick: function (e) {
@@ -136,7 +135,7 @@ export function criarGraficoBarra(
           e,
           'nearest',
           { intersect: true },
-          true
+          true,
         );
 
         if (points.length) {
@@ -154,35 +153,49 @@ export function criarGraficoBarra(
 }
 
 function aplicarFiltroPorChave(chave, labelSelecionada) {
+  // Adiciona ou remove o filtro
   if (filtrosAtivos[chave].includes(labelSelecionada)) {
     filtrosAtivos[chave] = filtrosAtivos[chave].filter(
-      (f) => f !== labelSelecionada
+      (f) => f !== labelSelecionada,
     );
   } else {
     filtrosAtivos[chave].push(labelSelecionada);
   }
 
   const dadosOriginais = originalData[chave];
-
   const dadosFiltrados =
     filtrosAtivos[chave].length > 0
       ? dadosOriginais.filter((item) =>
           filtrosAtivos[chave].some((filtro) =>
-            Object.values(item).includes(filtro)
-          )
+            Object.values(item).includes(filtro),
+          ),
         )
       : dadosOriginais;
 
   chartsRegistry[chave].forEach((chart) => {
     const labels = chart.data.labels;
 
-    chart.data.datasets.forEach((dataset) => {
-      dataset.data = labels.map(
-        (label) =>
-          dadosFiltrados.filter((item) => Object.values(item).includes(label))
-            .length
-      );
-    });
+    if (chart.config.type === 'bar') {
+      // Para gráficos de barras, recalcula os valores mantendo a estrutura original
+      chart.data.datasets.forEach((dataset, index) => {
+        const label = dataset.label;
+        // Calcula o valor para o label correspondente ao dataset
+        const valorFiltrado = dadosFiltrados.filter((item) =>
+          Object.values(item).includes(label),
+        ).length;
+        // Mantém a lógica de um valor por posição
+        dataset.data = labels.map((_, i) => (i === index ? valorFiltrado : 0));
+      });
+    } else if (chart.config.type === 'doughnut') {
+      // Para gráficos de rosca, atualiza os dados diretamente
+      chart.data.datasets.forEach((dataset) => {
+        dataset.data = labels.map(
+          (label) =>
+            dadosFiltrados.filter((item) => Object.values(item).includes(label))
+              .length,
+        );
+      });
+    }
 
     chart.update();
   });
