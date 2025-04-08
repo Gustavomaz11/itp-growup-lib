@@ -4,18 +4,18 @@ const chartsRegistry = {};
 const originalData = {};
 const filtrosAtivos = {};
 
+/**
+ * Cria um gráfico de Rosca.
+ */
 export function criarGraficoRosca(
   ctx,
   dados,
   chave,
   obj,
-  opcoesPersonalizadas = {}
+  opcoesPersonalizadas = {},
+  callbackTotalAtendimentos = null,
 ) {
-  if (!chartsRegistry[chave]) {
-    chartsRegistry[chave] = [];
-    originalData[chave] = obj;
-    filtrosAtivos[chave] = [];
-  }
+  inicializarGrafico(chave, obj);
 
   const configuracaoPadrao = {
     type: 'doughnut',
@@ -46,14 +46,16 @@ export function criarGraficoRosca(
             font: { size: 14 },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) =>
-            aplicarFiltroPorChave(chave, legendItem.text),
+          onClick: (_, legendItem) =>
+            aplicarFiltroPorChave(
+              chave,
+              legendItem.text,
+              callbackTotalAtendimentos,
+            ),
         },
         tooltip: {
           callbacks: {
-            label: function (context) {
-              return `${context.label}: ${context.raw}`;
-            },
+            label: (context) => `${context.label}: ${context.raw}`,
           },
         },
       },
@@ -62,144 +64,98 @@ export function criarGraficoRosca(
     },
   };
 
-  const chartInstance = new Chart(ctx, configuracaoPadrao);
-  chartsRegistry[chave].push(chartInstance);
+  adicionarGrafico(chave, ctx, configuracaoPadrao);
+  calcularTotalAtendimentos(chave, callbackTotalAtendimentos); // Inicializa o total de atendimentos
 }
 
-export function criarGraficoBarra(
-  ctx,
-  dados,
-  chave,
-  obj,
-  labelPersonalizada = [],
-  opcoesPersonalizadas = {}
-) {
+/**
+ * Inicializa um gráfico na chave especificada.
+ */
+function inicializarGrafico(chave, obj) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
     originalData[chave] = obj;
     filtrosAtivos[chave] = [];
   }
+}
 
-  const datasets = dados.data.map((valor, index) => ({
-    label: labelPersonalizada[index] || `Item ${index + 1}`,
-    data: dados.labels.map((_, i) => (i === index ? valor : 0)),
-    backgroundColor: Array.isArray(dados.backgroundColor)
-      ? dados.backgroundColor[index]
-      : dados.backgroundColor || '#36A2EB',
-    borderColor: Array.isArray(dados.borderColor)
-      ? dados.borderColor[index]
-      : dados.borderColor || '#1A7CE2',
-    borderWidth: 1,
-  }));
-
-  const configuracaoPadrao = {
-    type: 'bar',
-    data: {
-      labels: dados.labels,
-      datasets,
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: {
-          display: true,
-          onClick: function (e, legendItem, legend) {
-            const funcionarioClicado = legendItem.text;
-            aplicarFiltroPorChave(chave, funcionarioClicado);
-          },
-        },
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              return `${context.dataset.label}: ${context.raw}`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          stacked: false,
-          ticks: {
-            autoSkip: false,
-            maxRotation: 45,
-            minRotation: 0,
-          },
-        },
-        y: {
-          beginAtZero: true,
-          stacked: false,
-        },
-      },
-      onClick: function (e) {
-        const points = this.getElementsAtEventForMode(
-          e,
-          'nearest',
-          { intersect: true },
-          true
-        );
-
-        if (points.length) {
-          const datasetIndex = points[0].datasetIndex;
-          const funcionario = this.data.datasets[datasetIndex].label;
-          aplicarFiltroPorChave(chave, funcionario);
-        }
-      },
-      ...opcoesPersonalizadas,
-    },
-  };
-
-  const chartInstance = new Chart(ctx, configuracaoPadrao);
+/**
+ * Adiciona um gráfico à chave especificada no registro.
+ */
+function adicionarGrafico(chave, ctx, configuracao) {
+  const chartInstance = new Chart(ctx, configuracao);
   chartsRegistry[chave].push(chartInstance);
 }
 
-function aplicarFiltroPorChave(chave, labelSelecionada) {
-  // Adiciona ou remove o filtro
-  if (filtrosAtivos[chave].includes(labelSelecionada)) {
-    filtrosAtivos[chave] = filtrosAtivos[chave].filter(
-      (f) => f !== labelSelecionada
+/**
+ * Aplica ou remove um filtro para a chave especificada.
+ */
+function aplicarFiltroPorChave(
+  chave,
+  labelSelecionada,
+  callbackTotalAtendimentos = null,
+) {
+  const filtros = filtrosAtivos[chave];
+
+  if (filtros.includes(labelSelecionada)) {
+    filtrosAtivos[chave] = filtros.filter(
+      (filtro) => filtro !== labelSelecionada,
     );
   } else {
     filtrosAtivos[chave].push(labelSelecionada);
   }
 
+  atualizarGraficos(chave, callbackTotalAtendimentos);
+}
+
+/**
+ * Atualiza os gráficos associados a uma chave.
+ */
+function atualizarGraficos(chave, callbackTotalAtendimentos = null) {
   const dadosOriginais = originalData[chave];
+  const filtros = filtrosAtivos[chave];
   const dadosFiltrados =
-    filtrosAtivos[chave].length > 0
+    filtros.length > 0
       ? dadosOriginais.filter((item) =>
-          filtrosAtivos[chave].some((filtro) =>
-            Object.values(item).includes(filtro)
-          )
+          filtros.some((filtro) => Object.values(item).includes(filtro)),
         )
       : dadosOriginais;
 
   chartsRegistry[chave].forEach((chart) => {
-    const labels = chart.data.labels;
-
     if (chart.config.type === 'bar') {
-      // Para gráficos de barras
       chart.data.datasets.forEach((dataset, index) => {
-        const label = dataset.label; // Nome do funcionário (ex.: "Roberto")
-        // Encontra o item correspondente ao funcionário nos dados filtrados
+        const label = dataset.label;
         const itemFiltrado = dadosFiltrados.find((item) =>
-          Object.values(item).includes(label)
+          Object.values(item).includes(label),
         );
-        // Se o funcionário está nos dados filtrados, usa o valor original; caso contrário, usa 0
-        const valorFiltrado = itemFiltrado ? itemFiltrado.valor : 0;
-        // Mantém a lógica de um valor por posição
-        dataset.data = labels.map((_, i) => (i === index ? valorFiltrado : 0));
+        dataset.data = chart.data.labels.map((_, i) =>
+          i === index && itemFiltrado ? itemFiltrado.valor : 0,
+        );
       });
     } else if (chart.config.type === 'doughnut') {
-      // Para gráficos de rosca
       chart.data.datasets.forEach((dataset) => {
-        dataset.data = labels.map(
+        dataset.data = chart.data.labels.map(
           (label) =>
-            dadosFiltrados.filter((item) =>
-              Object.values(item).includes(label)
-            ).length
+            dadosFiltrados.filter((item) => Object.values(item).includes(label))
+              .length,
         );
       });
     }
 
     chart.update();
   });
+
+  calcularTotalAtendimentos(chave, callbackTotalAtendimentos, dadosFiltrados);
+}
+
+/**
+ * Calcula o total de atendimentos.
+ */
+function calcularTotalAtendimentos(chave, callback, dadosFiltrados = null) {
+  const dados = dadosFiltrados || originalData[chave];
+  const totalAtendimentos = dados.length;
+
+  if (typeof callback === 'function') {
+    callback(totalAtendimentos);
+  }
 }
