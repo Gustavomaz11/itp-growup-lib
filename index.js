@@ -13,7 +13,7 @@ export function criarGraficoRosca(
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
-    originalData[chave] = obj;
+    originalData[chave] = { dados, obj }; // Armazena os dados originais junto com o objeto
     filtrosAtivos[chave] = {};
   }
 
@@ -80,17 +80,17 @@ function aplicarFiltro(chave, dimensao, valor) {
     filtrosAtivos[chave][dimensao].push(valor);
   }
 
-  const dadosOriginais = originalData[chave];
+  const { dados } = originalData[chave]; // Recupera os dados originais
   const filtros = filtrosAtivos[chave];
 
-  const dadosFiltrados = dadosOriginais.filter((item) => {
+  const dadosFiltrados = originalData[chave].obj.filter((item) => {
     return Object.keys(filtros).every((dim) => {
       return filtros[dim].length === 0 || filtros[dim].includes(item[dim]);
     });
   });
 
   chartsRegistry[chave].forEach((chart) => {
-    chart.data.datasets.forEach((dataset, index) => {
+    chart.data.datasets.forEach((dataset) => {
       dataset.data = dados.labels.map((label) => {
         return dadosFiltrados.filter((item) => item.label === label).length;
       });
