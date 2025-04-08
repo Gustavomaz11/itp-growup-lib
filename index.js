@@ -14,7 +14,7 @@ export function criarGraficoRosca(
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
     originalData[chave] = obj;
-    filtrosAtivos[chave] = [];
+    filtrosAtivos[chave] = {};
   }
 
   const configuracaoPadrao = {
@@ -47,7 +47,7 @@ export function criarGraficoRosca(
             usePointStyle: true,
           },
           onClick: (e, legendItem) =>
-            aplicarFiltroPorChave(chave, legendItem.text),
+            aplicarFiltro(chave, 'prioridade', legendItem.text),
         },
         tooltip: {
           callbacks: {
@@ -66,106 +66,33 @@ export function criarGraficoRosca(
   chartsRegistry[chave].push(chartInstance);
 }
 
-export function criarGraficoBarra(
-  ctx,
-  dados,
-  chave,
-  obj,
-  opcoesPersonalizadas = {},
-) {
-  if (!chartsRegistry[chave]) {
-    chartsRegistry[chave] = [];
-    originalData[chave] = obj;
-    filtrosAtivos[chave] = [];
+function aplicarFiltro(chave, dimensao, valor) {
+  if (!filtrosAtivos[chave][dimensao]) {
+    filtrosAtivos[chave][dimensao] = [];
   }
 
-  // Transformar cada dado em um dataset individual
-  const datasets = dados.labels.map((nome, index) => ({
-    label: nome,
-    data: [dados.data[index]], // apenas um valor por dataset
-    backgroundColor: dados.backgroundColor
-      ? dados.backgroundColor[index]
-      : '#36A2EB',
-    borderColor: dados.borderColor ? dados.borderColor[index] : '#1A7CE2',
-    borderWidth: 1,
-  }));
-
-  const configuracaoPadrao = {
-    type: 'bar',
-    data: {
-      labels: [''], // label vazia pois cada dataset representa uma barra
-      datasets: datasets,
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            font: { size: 14 },
-            usePointStyle: true,
-          },
-          onClick: (e, legendItem, legend) =>
-            aplicarFiltroPorChave(chave, legendItem.text),
-        },
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              return `${context.dataset.label}: ${context.raw}`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          stacked: true,
-          ticks: {
-            display: false, // esconder eixo X pois cada dataset representa uma pessoa
-          },
-        },
-        y: {
-          beginAtZero: true,
-          ticks: {
-            stepSize: 1,
-          },
-        },
-      },
-      ...opcoesPersonalizadas,
-    },
-  };
-
-  const chartInstance = new Chart(ctx, configuracaoPadrao);
-  chartsRegistry[chave].push(chartInstance);
-}
-
-function aplicarFiltroPorChave(chave, labelSelecionada) {
-  // Alternar o filtro (ativa ou desativa)
-  if (filtrosAtivos[chave].includes(labelSelecionada)) {
-    filtrosAtivos[chave] = filtrosAtivos[chave].filter(
-      (f) => f !== labelSelecionada,
+  const filtroAtivo = filtrosAtivos[chave][dimensao].includes(valor);
+  if (filtroAtivo) {
+    filtrosAtivos[chave][dimensao] = filtrosAtivos[chave][dimensao].filter(
+      (v) => v !== valor,
     );
   } else {
-    filtrosAtivos[chave].push(labelSelecionada);
+    filtrosAtivos[chave][dimensao].push(valor);
   }
 
   const dadosOriginais = originalData[chave];
+  const filtros = filtrosAtivos[chave];
 
-  const dadosFiltrados =
-    filtrosAtivos[chave].length > 0
-      ? dadosOriginais.filter((item) =>
-          filtrosAtivos[chave].every((filtro) =>
-            Object.values(item).includes(filtro),
-          ),
-        )
-      : dadosOriginais;
+  const dadosFiltrados = dadosOriginais.filter((item) => {
+    return Object.keys(filtros).every((dim) => {
+      return filtros[dim].length === 0 || filtros[dim].includes(item[dim]);
+    });
+  });
 
   chartsRegistry[chave].forEach((chart) => {
-    const labels = chart.data.labels;
-    chart.data.datasets.forEach((dataset) => {
-      dataset.data = labels.map((label) => {
-        return dadosFiltrados.filter((item) =>
-          Object.values(item).includes(label),
-        ).length;
+    chart.data.datasets.forEach((dataset, index) => {
+      dataset.data = dados.labels.map((label) => {
+        return dadosFiltrados.filter((item) => item.label === label).length;
       });
     });
     chart.update();
