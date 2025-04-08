@@ -118,7 +118,7 @@ export function criarGraficoBarra(
       },
       scales: {
         x: {
-          stacked: false, // Removido empilhamento
+          stacked: false,
           ticks: {
             autoSkip: false,
             maxRotation: 45,
@@ -127,7 +127,7 @@ export function criarGraficoBarra(
         },
         y: {
           beginAtZero: true,
-          stacked: false, // Removido empilhamento
+          stacked: false,
         },
       },
       onClick: function (e) {
@@ -176,18 +176,20 @@ function aplicarFiltroPorChave(chave, labelSelecionada) {
     const labels = chart.data.labels;
 
     if (chart.config.type === 'bar') {
-      // Para gráficos de barras, recalcula os valores mantendo a estrutura original
+      // Para gráficos de barras
       chart.data.datasets.forEach((dataset, index) => {
-        const label = dataset.label;
-        // Calcula o valor para o label correspondente ao dataset
-        const valorFiltrado = dadosFiltrados.filter((item) =>
+        const label = dataset.label; // Nome do funcionário (ex.: "Roberto")
+        // Encontra o item correspondente ao funcionário nos dados filtrados
+        const itemFiltrado = dadosFiltrados.find((item) =>
           Object.values(item).includes(label),
-        ).length;
+        );
+        // Se o funcionário está nos dados filtrados, usa o valor original; caso contrário, usa 0
+        const valorFiltrado = itemFiltrado ? itemFiltrado.valor : 0;
         // Mantém a lógica de um valor por posição
         dataset.data = labels.map((_, i) => (i === index ? valorFiltrado : 0));
       });
     } else if (chart.config.type === 'doughnut') {
-      // Para gráficos de rosca, atualiza os dados diretamente
+      // Para gráficos de rosca
       chart.data.datasets.forEach((dataset) => {
         dataset.data = labels.map(
           (label) =>
