@@ -13,8 +13,8 @@ export function criarGraficoRosca(
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
-    originalData[chave] = { dados, obj }; // Armazena os dados originais junto com o objeto
-    filtrosAtivos[chave] = {};
+    originalData[chave] = { ...dados }; // Clona os dados originais
+    filtrosAtivos[chave] = []; // Inicializa os filtros
   }
 
   const configuracaoPadrao = {
@@ -46,8 +46,7 @@ export function criarGraficoRosca(
             font: { size: 14 },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) =>
-            aplicarFiltro(chave, 'prioridade', legendItem.text),
+          onClick: (e, legendItem) => aplicarFiltro(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
@@ -57,7 +56,7 @@ export function criarGraficoRosca(
           },
         },
       },
-      cutout: 80,
+      cutout: 80, // Define o tamanho do recorte interno
       ...opcoesPersonalizadas,
     },
   };
@@ -66,35 +65,30 @@ export function criarGraficoRosca(
   chartsRegistry[chave].push(chartInstance);
 }
 
-function aplicarFiltro(chave, dimensao, valor) {
-  if (!filtrosAtivos[chave][dimensao]) {
-    filtrosAtivos[chave][dimensao] = [];
-  }
-
-  const filtroAtivo = filtrosAtivos[chave][dimensao].includes(valor);
-  if (filtroAtivo) {
-    filtrosAtivos[chave][dimensao] = filtrosAtivos[chave][dimensao].filter(
-      (v) => v !== valor,
+function aplicarFiltro(chave, labelSelecionada) {
+  // Adiciona ou remove o filtro para o item selecionado
+  if (filtrosAtivos[chave].includes(labelSelecionada)) {
+    filtrosAtivos[chave] = filtrosAtivos[chave].filter(
+      (label) => label !== labelSelecionada,
     );
   } else {
-    filtrosAtivos[chave][dimensao].push(valor);
+    filtrosAtivos[chave].push(labelSelecionada);
   }
 
-  const { dados } = originalData[chave]; // Recupera os dados originais
-  const filtros = filtrosAtivos[chave];
+  const dadosOriginais = originalData[chave];
 
-  const dadosFiltrados = originalData[chave].obj.filter((item) => {
-    return Object.keys(filtros).every((dim) => {
-      return filtros[dim].length === 0 || filtros[dim].includes(item[dim]);
-    });
-  });
+  // Aplica os filtros aos dados
+  const dadosFiltrados = filtrosAtivos[chave].length
+    ? dadosOriginais.labels.map((label, index) => {
+        return filtrosAtivos[chave].includes(label)
+          ? dadosOriginais.data[index]
+          : 0;
+      })
+    : [...dadosOriginais.data]; // Sem filtros, mantém os dados originais
 
+  // Atualiza os gráficos registrados para a chave
   chartsRegistry[chave].forEach((chart) => {
-    chart.data.datasets.forEach((dataset) => {
-      dataset.data = dados.labels.map((label) => {
-        return dadosFiltrados.filter((item) => item.label === label).length;
-      });
-    });
+    chart.data.datasets[0].data = dadosFiltrados;
     chart.update();
   });
 }
