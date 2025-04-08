@@ -79,23 +79,22 @@ export function criarGraficoBarra(
     filtrosAtivos[chave] = [];
   }
 
+  // Transformar cada dado em um dataset individual
+  const datasets = dados.labels.map((nome, index) => ({
+    label: nome,
+    data: [dados.data[index]], // apenas um valor por dataset
+    backgroundColor: dados.backgroundColor
+      ? dados.backgroundColor[index]
+      : '#36A2EB',
+    borderColor: dados.borderColor ? dados.borderColor[index] : '#1A7CE2',
+    borderWidth: 1,
+  }));
+
   const configuracaoPadrao = {
     type: 'bar',
     data: {
-      labels: dados.labels,
-      datasets: [
-        {
-          label: dados.label || 'Dados',
-          data: dados.data,
-          backgroundColor: dados.backgroundColor || [
-            '#FF6384',
-            '#36A2EB',
-            '#FFCE56',
-          ],
-          borderColor: dados.borderColor || ['#FF3B57', '#1A7CE2', '#FFB800'],
-          borderWidth: 1,
-        },
-      ],
+      labels: [''], // label vazia pois cada dataset representa uma barra
+      datasets: datasets,
     },
     options: {
       responsive: true,
@@ -106,18 +105,24 @@ export function criarGraficoBarra(
             font: { size: 14 },
             usePointStyle: true,
           },
-          onClick: (e, legendItem) =>
+          onClick: (e, legendItem, legend) =>
             aplicarFiltroPorChave(chave, legendItem.text),
         },
         tooltip: {
           callbacks: {
             label: function (context) {
-              return `${context.label}: ${context.raw}`;
+              return `${context.dataset.label}: ${context.raw}`;
             },
           },
         },
       },
       scales: {
+        x: {
+          stacked: true,
+          ticks: {
+            display: false, // esconder eixo X pois cada dataset representa uma pessoa
+          },
+        },
         y: {
           beginAtZero: true,
           ticks: {
@@ -154,7 +159,6 @@ function aplicarFiltroPorChave(chave, labelSelecionada) {
         )
       : dadosOriginais;
 
-  // Atualiza todos os gráficos da chave com os dados filtrados
   chartsRegistry[chave].forEach((chart) => {
     const labels = chart.data.labels;
     chart.data.datasets.forEach((dataset) => {
