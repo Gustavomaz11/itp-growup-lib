@@ -9,7 +9,7 @@ export function criarGraficoRosca(
   dados,
   chave,
   obj,
-  opcoesPersonalizadas = {},
+  opcoesPersonalizadas = {}
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
@@ -72,7 +72,7 @@ export function criarGraficoBarra(
   chave,
   obj,
   labelPersonalizada = [],
-  opcoesPersonalizadas = {},
+  opcoesPersonalizadas = {}
 ) {
   if (!chartsRegistry[chave]) {
     chartsRegistry[chave] = [];
@@ -81,9 +81,9 @@ export function criarGraficoBarra(
   }
 
   // Cria um dataset por funcionário
-  const datasets = dados.labels.map((label, index) => ({
-    label: label,
-    data: dados.data.map((valor, i) => (i === index ? valor : 0)),
+  const datasets = dados.data.map((valor, index) => ({
+    label: labelPersonalizada[index] || `Item ${index + 1}`,
+    data: dados.labels.map((_, i) => (i === index ? valor : 0)), // só mostra valor na posição do funcionário
     backgroundColor: Array.isArray(dados.backgroundColor)
       ? dados.backgroundColor[index]
       : dados.backgroundColor || '#36A2EB',
@@ -104,7 +104,7 @@ export function criarGraficoBarra(
       plugins: {
         legend: {
           display: true,
-          onClick: function (e, legendItem) {
+          onClick: function (e, legendItem, legend) {
             const funcionarioClicado = legendItem.text;
             aplicarFiltroPorChave(chave, funcionarioClicado);
           },
@@ -131,6 +131,20 @@ export function criarGraficoBarra(
           stacked: true,
         },
       },
+      onClick: function (e) {
+        const points = this.getElementsAtEventForMode(
+          e,
+          'nearest',
+          { intersect: true },
+          true
+        );
+
+        if (points.length) {
+          const datasetIndex = points[0].datasetIndex;
+          const funcionario = this.data.datasets[datasetIndex].label;
+          aplicarFiltroPorChave(chave, funcionario);
+        }
+      },
       ...opcoesPersonalizadas,
     },
   };
@@ -142,7 +156,7 @@ export function criarGraficoBarra(
 function aplicarFiltroPorChave(chave, labelSelecionada) {
   if (filtrosAtivos[chave].includes(labelSelecionada)) {
     filtrosAtivos[chave] = filtrosAtivos[chave].filter(
-      (f) => f !== labelSelecionada,
+      (f) => f !== labelSelecionada
     );
   } else {
     filtrosAtivos[chave].push(labelSelecionada);
@@ -153,14 +167,20 @@ function aplicarFiltroPorChave(chave, labelSelecionada) {
   const dadosFiltrados =
     filtrosAtivos[chave].length > 0
       ? dadosOriginais.filter((item) =>
-          filtrosAtivos[chave].includes(item.label),
+          filtrosAtivos[chave].some((filtro) =>
+            Object.values(item).includes(filtro)
+          )
         )
       : dadosOriginais;
 
   chartsRegistry[chave].forEach((chart) => {
+    const labels = chart.data.labels;
+
     chart.data.datasets.forEach((dataset) => {
-      dataset.data = dadosOriginais.map((item) =>
-        dadosFiltrados.some((f) => f.label === dataset.label) ? item.value : 0,
+      dataset.data = labels.map(
+        (label) =>
+          dadosFiltrados.filter((item) => Object.values(item).includes(label))
+            .length
       );
     });
 
