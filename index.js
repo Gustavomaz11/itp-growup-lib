@@ -84,10 +84,10 @@ export function criarGraficoBarra(
     label: labelPersonalizada[index] || `Item ${index + 1}`,
     data: dados.labels.map((_, i) => (i === index ? valor : 0)),
     backgroundColor: Array.isArray(dados.backgroundColor)
-      ? dados.backgroundColor[index]
+      ? dados.backgroundColor[index % dados.backgroundColor.length] // Ajuste para evitar erro de índice
       : dados.backgroundColor || '#36A2EB',
     borderColor: Array.isArray(dados.borderColor)
-      ? dados.borderColor[index]
+      ? dados.borderColor[index % dados.borderColor.length]
       : dados.borderColor || '#1A7CE2',
     borderWidth: 1,
   }));
@@ -124,6 +124,8 @@ export function criarGraficoBarra(
             maxRotation: 45,
             minRotation: 0,
           },
+          barThickness: 40, // Ajusta a largura das barras (em pixels)
+          categoryPercentage: 0.8, // Ajusta a proporção do espaço da categoria
         },
         y: {
           beginAtZero: true,
@@ -178,13 +180,11 @@ function aplicarFiltroPorChave(chave, labelSelecionada) {
     if (chart.config.type === 'bar') {
       // Para gráficos de barras
       chart.data.datasets.forEach((dataset, index) => {
-        const label = dataset.label; // Nome do funcionário (ex.: "Roberto")
-        // Encontra o item correspondente ao funcionário nos dados filtrados
-        const itemFiltrado = dadosFiltrados.find((item) =>
-          Object.values(item).includes(label),
-        );
-        // Se o funcionário está nos dados filtrados, usa o valor original; caso contrário, usa 0
-        const valorFiltrado = itemFiltrado ? itemFiltrado.valor : 0;
+        const label = dataset.label; // Nome do funcionário (ex.: "Roberto Almeida")
+        // Conta quantas vezes o atendente aparece nos dados filtrados
+        const valorFiltrado = dadosFiltrados.filter(
+          (item) => item.atendente === label,
+        ).length;
         // Mantém a lógica de um valor por posição
         dataset.data = labels.map((_, i) => (i === index ? valorFiltrado : 0));
       });
@@ -193,8 +193,7 @@ function aplicarFiltroPorChave(chave, labelSelecionada) {
       chart.data.datasets.forEach((dataset) => {
         dataset.data = labels.map(
           (label) =>
-            dadosFiltrados.filter((item) => Object.values(item).includes(label))
-              .length,
+            dadosFiltrados.filter((item) => item.prioridade === label).length,
         );
       });
     }
