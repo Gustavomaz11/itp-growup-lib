@@ -18,24 +18,24 @@ export function processarDados(
   }
 
   // Adicionar logging para entender os dados recebidos
-  console.log('Dados recebidos:', dados.length, 'itens');
-  console.log('Exemplo do primeiro item:', dados[0]);
-  console.log('Campo de data a ser usado:', campoData);
-  console.log('Lapso temporal:', lapsoTemporal);
-  console.log('Tipo de cálculo:', tipoCalculo);
-  console.log('Mês desejado:', mesDesejado);
+  // console.log('Dados recebidos:', dados.length, 'itens');
+  // console.log('Exemplo do primeiro item:', dados[0]);
+  // console.log('Campo de data a ser usado:', campoData);
+  // console.log('Lapso temporal:', lapsoTemporal);
+  // console.log('Tipo de cálculo:', tipoCalculo);
+  // console.log('Mês desejado:', mesDesejado);
 
   // Conversão de strings de data para objetos Date com tratamento de erros
   const parseDate = (str) => {
     if (!str) {
-      console.warn('String de data inválida:', str);
+      // console.warn('String de data inválida:', str);
       return null;
     }
     try {
       // Adicionar formato ISO para garantir interpretação correta
       return new Date(str.replace(' ', 'T'));
     } catch (e) {
-      console.error('Erro ao converter data:', str, e);
+      // console.error('Erro ao converter data:', str, e);
       return null;
     }
   };
@@ -49,12 +49,12 @@ export function processarDados(
     const item = dados[i];
     
     if (!item || typeof item !== 'object') {
-      console.warn('Item inválido no índice', i, ':', item);
+      // console.warn('Item inválido no índice', i, ':', item);
       continue;
     }
     
     if (!item[campoData]) {
-      console.warn('Item sem o campo de data especificado no índice', i, ':', item);
+      // console.warn('Item sem o campo de data especificado no índice', i, ':', item);
       continue;
     }
     
@@ -62,25 +62,25 @@ export function processarDados(
     const data = parseDate(dataStr);
     
     if (!data) {
-      console.warn('Falha ao converter data no índice', i, ':', dataStr);
+      // console.warn('Falha ao converter data no índice', i, ':', dataStr);
       continue;
     }
     
-    console.log(`Item ${i}: data=${dataStr}, convertida para=${data}`);
+    // console.log(`Item ${i}: data=${dataStr}, convertida para=${data}`);
     
     let incluir = false;
     
     if (lapsoTemporal === 'semana') {
       const diferencaDias = (agora - data) / (1000 * 60 * 60 * 24);
       incluir = diferencaDias <= 7;
-      console.log(`  - Semana: diferença=${diferencaDias} dias, incluir=${incluir}`);
+      // console.log(`  - Semana: diferença=${diferencaDias} dias, incluir=${incluir}`);
     } else if (lapsoTemporal === 'mês') {
       const mesAtual = mesDesejado || (agora.getMonth() + 1);
       incluir = data.getMonth() + 1 === mesAtual;
-      console.log(`  - Mês: mês do item=${data.getMonth() + 1}, mês desejado=${mesAtual}, incluir=${incluir}`);
+      // console.log(`  - Mês: mês do item=${data.getMonth() + 1}, mês desejado=${mesAtual}, incluir=${incluir}`);
     } else if (lapsoTemporal === 'ano') {
       incluir = data.getFullYear() === agora.getFullYear();
-      console.log(`  - Ano: ano do item=${data.getFullYear()}, ano atual=${agora.getFullYear()}, incluir=${incluir}`);
+      // console.log(`  - Ano: ano do item=${data.getFullYear()}, ano atual=${agora.getFullYear()}, incluir=${incluir}`);
     }
     
     if (incluir) {
@@ -88,10 +88,10 @@ export function processarDados(
     }
   }
 
-  console.log('Itens filtrados:', filtrados.length);
+  // console.log('Itens filtrados:', filtrados.length);
   
   if (filtrados.length === 0) {
-    console.warn('Nenhum dado após filtragem');
+    // console.warn('Nenhum dado após filtragem');
     return { labels: [], data: [] };
   }
 
@@ -115,7 +115,7 @@ export function processarDados(
     agrupados[chave].push(data);
   }
 
-  console.log('Agrupados por chave:', Object.keys(agrupados));
+  // console.log('Agrupados por chave:', Object.keys(agrupados));
 
   const labels = Object.keys(agrupados);
   const data = Object.values(agrupados).map((datas) => {
@@ -130,8 +130,8 @@ export function processarDados(
     }
   });
 
-  console.log('Labels finais:', labels);
-  console.log('Dados finais:', data);
+  // console.log('Labels finais:', labels);
+  // console.log('Dados finais:', data);
 
   return { labels, data };
 }
