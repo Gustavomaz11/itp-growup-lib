@@ -17,7 +17,7 @@ export function processarDados(
   const agora = new Date();
   const filtrados = dados.filter((item) => {
     const data = parseDate(item.data);
-    console.log('Data processada:', data, 'É válida?', !isNaN(data.getTime()));
+    // console.log('Data processada:', data, 'É válida?', !isNaN(data.getTime()));
     if (lapsoTemporal === 'semana') {
       const diferencaDias = (agora - data) / (1000 * 60 * 60 * 24);
       console.log('Diferença em dias:', diferencaDias);
