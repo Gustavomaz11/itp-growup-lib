@@ -11,12 +11,35 @@ export function processarDados(
   tipoCalculo, // 'média de tempo' ou 'contagem de atendimentos'
   mesDesejado = null, // Apenas para o lapso 'mês'
 ) {
-  // Conversão de strings de data para objetos Date
-  const parseDate = (str) => new Date(str.replace(' ', 'T'));
+  // Verificação de dados de entrada
+  if (!dados || !Array.isArray(dados) || dados.length === 0) {
+    console.warn('Dados inválidos ou vazios');
+    return { labels: [], data: [] };
+  }
+
+  // Conversão de strings de data para objetos Date com tratamento de erros
+  const parseDate = (str) => {
+    if (!str) {
+      console.warn('String de data inválida');
+      return new Date();
+    }
+    try {
+      return new Date(str.replace(' ', 'T'));
+    } catch (e) {
+      console.error('Erro ao converter data:', e);
+      return new Date();
+    }
+  };
 
   const agora = new Date();
   const filtrados = dados.filter((item) => {
-    const data = parseDate(item.data);
+    // Acessando o campo correto usando campoData como índice
+    if (!item || !item[campoData]) {
+      return false;
+    }
+
+    const data = parseDate(item[campoData]); // Usar campoData em vez de item.data
+
     if (lapsoTemporal === 'semana') {
       const diferencaDias = (agora - data) / (1000 * 60 * 60 * 24);
       return diferencaDias <= 7; // Últimos 7 dias
@@ -30,6 +53,11 @@ export function processarDados(
     }
     return false;
   });
+
+  if (filtrados.length === 0) {
+    console.warn('Nenhum dado após filtragem');
+    return { labels: [], data: [] };
+  }
 
   const agrupados = filtrados.reduce((acc, item) => {
     const data = parseDate(item[campoData]);
@@ -59,7 +87,6 @@ export function processarDados(
 
   return { labels, data };
 }
-
 /**
  * Cria um gráfico de Rosca.
  */
