@@ -17,123 +17,167 @@ export function processarDados(
     return { labels: [], data: [] };
   }
 
-  // Adicionar logging para entender os dados recebidos
-  // console.log('Dados recebidos:', dados.length, 'itens');
-  // console.log('Exemplo do primeiro item:', dados[0]);
-  // console.log('Campo de data a ser usado:', campoData);
-  // console.log('Lapso temporal:', lapsoTemporal);
-  // console.log('Tipo de cálculo:', tipoCalculo);
-  // console.log('Mês desejado:', mesDesejado);
+  console.log(`Processando ${dados.length} registros para ${lapsoTemporal}`);
 
-  // Conversão de strings de data para objetos Date com tratamento de erros
+  // Função de parse de data mais robusta
   const parseDate = (str) => {
-    if (!str) {
-      // console.warn('String de data inválida:', str);
-      return null;
-    }
+    if (!str) return null;
     try {
-      // Adicionar formato ISO para garantir interpretação correta
-      return new Date(str.replace(' ', 'T'));
+      // Garantir formato consistente
+      return new Date(str);
     } catch (e) {
-      // console.error('Erro ao converter data:', str, e);
+      console.error('Erro ao converter data:', str, e);
       return null;
     }
   };
 
-  const agora = new Date();
-  console.log('Data atual de referência:', agora);
+  // Obter os dias da semana em português
+  const diasDaSemana = [
+    'Domingo',
+    'Segunda',
+    'Terça',
+    'Quarta',
+    'Quinta',
+    'Sexta',
+    'Sábado',
+  ];
 
-  // Filtrar dados verificando cada item antes do processamento
-  const filtrados = [];
-  for (let i = 0; i < dados.length; i++) {
-    const item = dados[i];
-    
-    if (!item || typeof item !== 'object') {
-      // console.warn('Item inválido no índice', i, ':', item);
-      continue;
+  // Para semana: em vez de filtrar pelos últimos 7 dias, agrupar por dia da semana
+  if (lapsoTemporal === 'semana') {
+    // Agrupar por dia da semana, independente da data específica
+    const porDiaDaSemana = {};
+
+    // Inicializar todos os dias da semana
+    diasDaSemana.forEach((dia) => {
+      porDiaDaSemana[dia] = [];
+    });
+
+    // Agrupar por dia da semana
+    dados.forEach((item) => {
+      const data = parseDate(item[campoData]);
+      if (data) {
+        const diaDaSemana = diasDaSemana[data.getDay()];
+        porDiaDaSemana[diaDaSemana].push(item);
+      }
+    });
+
+    // Criar labels e data
+    const labels = diasDaSemana;
+    const data = labels.map((dia) => {
+      const itens = porDiaDaSemana[dia];
+      if (tipoCalculo === 'média de tempo') {
+        if (itens.length === 0) return 0;
+        return Math.round(
+          itens.reduce((soma, item) => {
+            const data = parseDate(item[campoData]);
+            return soma + (data ? data.getTime() : 0);
+          }, 0) /
+            itens.length /
+            (1000 * 60 * 60),
+        );
+      } else {
+        return itens.length;
+      }
+    });
+
+    console.log('Dados por dia da semana:', { labels, data });
+    return { labels, data };
+  }
+  // Para mês: filtrar pelo mês desejado e agrupar por dia do mês
+  else if (lapsoTemporal === 'mês') {
+    const porDiaDoMes = {};
+
+    // Inicializar todos os dias do mês (1 a 31)
+    for (let i = 1; i <= 31; i++) {
+      porDiaDoMes[i] = [];
     }
-    
-    if (!item[campoData]) {
-      // console.warn('Item sem o campo de data especificado no índice', i, ':', item);
-      continue;
-    }
-    
-    const dataStr = item[campoData];
-    const data = parseDate(dataStr);
-    
-    if (!data) {
-      // console.warn('Falha ao converter data no índice', i, ':', dataStr);
-      continue;
-    }
-    
-    // console.log(`Item ${i}: data=${dataStr}, convertida para=${data}`);
-    
-    let incluir = false;
-    
-    if (lapsoTemporal === 'semana') {
-      const diferencaDias = (agora - data) / (1000 * 60 * 60 * 24);
-      incluir = diferencaDias <= 7;
-      // console.log(`  - Semana: diferença=${diferencaDias} dias, incluir=${incluir}`);
-    } else if (lapsoTemporal === 'mês') {
-      const mesAtual = mesDesejado || (agora.getMonth() + 1);
-      incluir = data.getMonth() + 1 === mesAtual;
-      // console.log(`  - Mês: mês do item=${data.getMonth() + 1}, mês desejado=${mesAtual}, incluir=${incluir}`);
-    } else if (lapsoTemporal === 'ano') {
-      incluir = data.getFullYear() === agora.getFullYear();
-      // console.log(`  - Ano: ano do item=${data.getFullYear()}, ano atual=${agora.getFullYear()}, incluir=${incluir}`);
-    }
-    
-    if (incluir) {
-      filtrados.push(item);
-    }
+
+    // Filtrar e agrupar por dia do mês
+    dados.forEach((item) => {
+      const data = parseDate(item[campoData]);
+      if (data && (!mesDesejado || data.getMonth() + 1 === mesDesejado)) {
+        const diaDoMes = data.getDate();
+        porDiaDoMes[diaDoMes].push(item);
+      }
+    });
+
+    // Criar labels e data (apenas para dias com dados)
+    const labels = Object.keys(porDiaDoMes).filter(
+      (dia) => porDiaDoMes[dia].length > 0,
+    );
+    const data = labels.map((dia) => {
+      const itens = porDiaDoMes[dia];
+      if (tipoCalculo === 'média de tempo') {
+        return Math.round(
+          itens.reduce((soma, item) => {
+            const data = parseDate(item[campoData]);
+            return soma + (data ? data.getTime() : 0);
+          }, 0) /
+            itens.length /
+            (1000 * 60 * 60),
+        );
+      } else {
+        return itens.length;
+      }
+    });
+
+    return { labels, data };
+  }
+  // Para ano: agrupar por mês
+  else if (lapsoTemporal === 'ano') {
+    const meses = [
+      'Jan',
+      'Fev',
+      'Mar',
+      'Abr',
+      'Mai',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Set',
+      'Out',
+      'Nov',
+      'Dez',
+    ];
+    const porMes = {};
+
+    // Inicializar todos os meses
+    meses.forEach((mes) => {
+      porMes[mes] = [];
+    });
+
+    // Agrupar por mês
+    dados.forEach((item) => {
+      const data = parseDate(item[campoData]);
+      if (data) {
+        const mes = meses[data.getMonth()];
+        porMes[mes].push(item);
+      }
+    });
+
+    // Criar labels e data
+    const labels = meses;
+    const data = labels.map((mes) => {
+      const itens = porMes[mes];
+      if (tipoCalculo === 'média de tempo') {
+        if (itens.length === 0) return 0;
+        return Math.round(
+          itens.reduce((soma, item) => {
+            const data = parseDate(item[campoData]);
+            return soma + (data ? data.getTime() : 0);
+          }, 0) /
+            itens.length /
+            (1000 * 60 * 60),
+        );
+      } else {
+        return itens.length;
+      }
+    });
+
+    return { labels, data };
   }
 
-  // console.log('Itens filtrados:', filtrados.length);
-  
-  if (filtrados.length === 0) {
-    // console.warn('Nenhum dado após filtragem');
-    return { labels: [], data: [] };
-  }
-
-  // Agrupar dados filtrados
-  const agrupados = {};
-  for (const item of filtrados) {
-    const data = parseDate(item[campoData]);
-    let chave;
-    
-    if (lapsoTemporal === 'semana') {
-      chave = data.toLocaleDateString('pt-BR', { weekday: 'short' });
-    } else if (lapsoTemporal === 'mês') {
-      chave = data.getDate();
-    } else if (lapsoTemporal === 'ano') {
-      chave = data.toLocaleDateString('pt-BR', { month: 'short' });
-    }
-    
-    if (!agrupados[chave]) {
-      agrupados[chave] = [];
-    }
-    agrupados[chave].push(data);
-  }
-
-  // console.log('Agrupados por chave:', Object.keys(agrupados));
-
-  const labels = Object.keys(agrupados);
-  const data = Object.values(agrupados).map((datas) => {
-    if (tipoCalculo === 'média de tempo') {
-      return Math.round(
-        datas.reduce((soma, d) => soma + d.getTime(), 0) /
-          datas.length /
-          (1000 * 60 * 60) // Converte para horas
-      );
-    } else {
-      return datas.length;
-    }
-  });
-
-  // console.log('Labels finais:', labels);
-  // console.log('Dados finais:', data);
-
-  return { labels, data };
+  return { labels: [], data: [] };
 }
 /**
  * Cria um gráfico de Rosca.
