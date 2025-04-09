@@ -6,62 +6,101 @@ const filtrosAtivos = {};
 
 export function processarDados(
   dados,
-  campoData, // Nome do campo contendo a data no formato "2023-01-04 20:12:35"
-  lapsoTemporal, // 'semana', 'mês' ou 'ano'
-  tipoCalculo, // 'média de tempo' ou 'contagem de atendimentos'
-  mesDesejado = null, // Apenas para o lapso 'mês'
+  campoData,
+  lapsoTemporal,
+  tipoCalculo,
+  mesDesejado = null,
 ) {
-  // Verificação de dados de entrada
+  // Verificação inicial de dados
   if (!dados || !Array.isArray(dados) || dados.length === 0) {
     console.warn('Dados inválidos ou vazios');
     return { labels: [], data: [] };
   }
 
+  // Adicionar logging para entender os dados recebidos
+  console.log('Dados recebidos:', dados.length, 'itens');
+  console.log('Exemplo do primeiro item:', dados[0]);
+  console.log('Campo de data a ser usado:', campoData);
+  console.log('Lapso temporal:', lapsoTemporal);
+  console.log('Tipo de cálculo:', tipoCalculo);
+  console.log('Mês desejado:', mesDesejado);
+
   // Conversão de strings de data para objetos Date com tratamento de erros
   const parseDate = (str) => {
     if (!str) {
-      console.warn('String de data inválida');
-      return new Date();
+      console.warn('String de data inválida:', str);
+      return null;
     }
     try {
+      // Adicionar formato ISO para garantir interpretação correta
       return new Date(str.replace(' ', 'T'));
     } catch (e) {
-      console.error('Erro ao converter data:', e);
-      return new Date();
+      console.error('Erro ao converter data:', str, e);
+      return null;
     }
   };
 
   const agora = new Date();
-  const filtrados = dados.filter((item) => {
-    // Acessando o campo correto usando campoData como índice
-    if (!item || !item[campoData]) {
-      return false;
+  console.log('Data atual de referência:', agora);
+
+  // Filtrar dados verificando cada item antes do processamento
+  const filtrados = [];
+  for (let i = 0; i < dados.length; i++) {
+    const item = dados[i];
+    
+    if (!item || typeof item !== 'object') {
+      console.warn('Item inválido no índice', i, ':', item);
+      continue;
     }
-
-    const data = parseDate(item[campoData]); // Usar campoData em vez de item.data
-
+    
+    if (!item[campoData]) {
+      console.warn('Item sem o campo de data especificado no índice', i, ':', item);
+      continue;
+    }
+    
+    const dataStr = item[campoData];
+    const data = parseDate(dataStr);
+    
+    if (!data) {
+      console.warn('Falha ao converter data no índice', i, ':', dataStr);
+      continue;
+    }
+    
+    console.log(`Item ${i}: data=${dataStr}, convertida para=${data}`);
+    
+    let incluir = false;
+    
     if (lapsoTemporal === 'semana') {
       const diferencaDias = (agora - data) / (1000 * 60 * 60 * 24);
-      return diferencaDias <= 7; // Últimos 7 dias
+      incluir = diferencaDias <= 7;
+      console.log(`  - Semana: diferença=${diferencaDias} dias, incluir=${incluir}`);
     } else if (lapsoTemporal === 'mês') {
-      const mesmoAno = data.getFullYear() === agora.getFullYear();
-      const mesmoMes = mesDesejado ? data.getMonth() + 1 === mesDesejado : true;
-      return mesmoAno && mesmoMes;
+      const mesAtual = mesDesejado || (agora.getMonth() + 1);
+      incluir = data.getMonth() + 1 === mesAtual;
+      console.log(`  - Mês: mês do item=${data.getMonth() + 1}, mês desejado=${mesAtual}, incluir=${incluir}`);
     } else if (lapsoTemporal === 'ano') {
-      const mesmoAno = data.getFullYear() === agora.getFullYear();
-      return mesmoAno;
+      incluir = data.getFullYear() === agora.getFullYear();
+      console.log(`  - Ano: ano do item=${data.getFullYear()}, ano atual=${agora.getFullYear()}, incluir=${incluir}`);
     }
-    return false;
-  });
+    
+    if (incluir) {
+      filtrados.push(item);
+    }
+  }
 
+  console.log('Itens filtrados:', filtrados.length);
+  
   if (filtrados.length === 0) {
     console.warn('Nenhum dado após filtragem');
     return { labels: [], data: [] };
   }
 
-  const agrupados = filtrados.reduce((acc, item) => {
+  // Agrupar dados filtrados
+  const agrupados = {};
+  for (const item of filtrados) {
     const data = parseDate(item[campoData]);
     let chave;
+    
     if (lapsoTemporal === 'semana') {
       chave = data.toLocaleDateString('pt-BR', { weekday: 'short' });
     } else if (lapsoTemporal === 'mês') {
@@ -69,21 +108,30 @@ export function processarDados(
     } else if (lapsoTemporal === 'ano') {
       chave = data.toLocaleDateString('pt-BR', { month: 'short' });
     }
-    if (!acc[chave]) acc[chave] = [];
-    acc[chave].push(data);
-    return acc;
-  }, {});
+    
+    if (!agrupados[chave]) {
+      agrupados[chave] = [];
+    }
+    agrupados[chave].push(data);
+  }
+
+  console.log('Agrupados por chave:', Object.keys(agrupados));
 
   const labels = Object.keys(agrupados);
-  const data = Object.values(agrupados).map((datas) =>
-    tipoCalculo === 'média de tempo'
-      ? Math.round(
-          datas.reduce((soma, d) => soma + d.getTime(), 0) /
-            datas.length /
-            (1000 * 60 * 60), // Converte milissegundos para horas
-        )
-      : datas.length,
-  );
+  const data = Object.values(agrupados).map((datas) => {
+    if (tipoCalculo === 'média de tempo') {
+      return Math.round(
+        datas.reduce((soma, d) => soma + d.getTime(), 0) /
+          datas.length /
+          (1000 * 60 * 60) // Converte para horas
+      );
+    } else {
+      return datas.length;
+    }
+  });
+
+  console.log('Labels finais:', labels);
+  console.log('Dados finais:', data);
 
   return { labels, data };
 }
