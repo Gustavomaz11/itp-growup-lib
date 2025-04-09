@@ -54,5 +54,49 @@
   <li>Para que a biblioteca possa processar todos os dados é obrigatório o envio da resposta da requisição;</li>
 </ul>
 
+<h2>Processamento de Dados</h2>
+<p>A biblioteca conta com uma função que processa dados fazendo a contagem do quantitativo e/ou a média de tempo.</p>
+<p>Exemplo:</p>
+<pre lang="bash">
+  <code>
+     const resultadoMes = itp.processarDados(resposta, "data_solicitacao", 'mês', 'contagem de atendimentos', 1);
+  </code>
+</pre>
+<ul>
+  <li><code>resposta</code>, trata-se da lista de objetos que é a resposta da requisição;</li>
+  <li><code>"data_solicitação"</code>, campo do objeto que a função irá processar;</li>
+  <pre lang="bash">
+    <code>
+       {
+        "codigo_atendimento": "ATD-000059",
+        "descricao_atendimento": "Descrição do atendimento 59",
+        "cliente": "Innovative Systems",
+        "solicitante": "Victor Dias",
+        "data_solicitacao": "2024-12-30 00:51:32",
+        "servico": "Monitoramento de Infraestrutura",
+        "atendente": "Roberto Almeida",
+        "prioridade": "Média",
+        "data_inicio_atendimento": "2024-12-31 14:51:32",
+        "tempo_inicio_hrs": 38,
+        "data_resolucao": "2025-01-01 06:51:32",
+        "tempo_resolucao_hrs": 16,
+        "data_fechamento": "2025-01-01 19:51:32",
+        "tempo_fechamento_hrs": 67,
+        "nota": "Ruim",
+        "interacoes": 3
+      },
+    </code>
+  </pre>
+  <li>O tipo de dado que o campo do objeto da requisição precisa ter é no formato: <code>YYYY-MM-DD HH:MM:SS</code>;</li>
+  <li>No parâmetro onde se encontra <code>mês</code> podem ser colocados outros parâmetros sendo eles: semana, mês e ano;</li>
+  <li>Caso ano será contabilizado os dados de Janeiro à Dezembro;</li>
+  <li>Caso mês, será contabilizado os dados do dia 1 ao dia 30 ou 31;</li>
+  <li>Caso semana, será contabilizado todos os dados de domingo a sábado (todos os dados de todos os domingos à sábados);</li>
+  <li>No parâmetro onde se encontra <code>"contagem de atendimentos"</code> podem ser colocados outros parâmetros sendo eles: contagem de atendimentos e média de tempo;</li>
+  <li>Caso <code>contagem de atendimento</code>, o processamento irá contabilizar quantos objetos tem na lista de objetos;</li>
+  <li>Caso <code>média de tempo</code>, o processamento irá calcular a média de acordo com o horário de atendimentos;</li>
+  <li>O ultimo parâmetro ele é obrigatório apenas caso seja escolhido o parâmetro <code>mês</code>. O ultimo parametro serve para identificar qual o mês o usuário deseja;</li>
+</ul>
+
 <h2>Licença</h2>
 <p>Este projeto está licenciado sob a licença MIT. Para mais detalhes, consulte o arquivo LICENSE</p>
