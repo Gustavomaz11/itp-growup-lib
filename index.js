@@ -6,10 +6,11 @@ const filtrosAtivos = {};
 
 export function processarDados(
   dados,
-  campoData,
+  campoDataInicio,
   lapsoTemporal,
   tipoCalculo,
   mesDesejado = null,
+  campoDataFim = null, // Novo parâmetro
 ) {
   // Verificação inicial de dados
   if (!dados || !Array.isArray(dados) || dados.length === 0) {
@@ -23,7 +24,6 @@ export function processarDados(
   const parseDate = (str) => {
     if (!str) return null;
     try {
-      // Garantir formato consistente
       return new Date(str);
     } catch (e) {
       console.error('Erro ao converter data:', str, e);
@@ -42,38 +42,41 @@ export function processarDados(
     'Sábado',
   ];
 
-  // Para semana: em vez de filtrar pelos últimos 7 dias, agrupar por dia da semana
+  // Para semana: agrupamento por dia da semana
   if (lapsoTemporal === 'semana') {
-    // Agrupar por dia da semana, independente da data específica
     const porDiaDaSemana = {};
-
-    // Inicializar todos os dias da semana
     diasDaSemana.forEach((dia) => {
       porDiaDaSemana[dia] = [];
     });
 
-    // Agrupar por dia da semana
     dados.forEach((item) => {
-      const data = parseDate(item[campoData]);
+      const data = parseDate(item[campoDataInicio]);
       if (data) {
         const diaDaSemana = diasDaSemana[data.getDay()];
         porDiaDaSemana[diaDaSemana].push(item);
       }
     });
 
-    // Criar labels e data
     const labels = diasDaSemana;
     const data = labels.map((dia) => {
       const itens = porDiaDaSemana[dia];
       if (tipoCalculo === 'média de tempo') {
+        if (!campoDataFim) {
+          console.error(
+            'campoDataFim é necessário para cálculo de média de tempo.',
+          );
+          return 0;
+        }
+
         if (itens.length === 0) return 0;
         return Math.round(
           itens.reduce((soma, item) => {
-            const data = parseDate(item[campoData]);
-            return soma + (data ? data.getTime() : 0);
+            const inicio = parseDate(item[campoDataInicio]);
+            const fim = parseDate(item[campoDataFim]);
+            return soma + (inicio && fim ? fim - inicio : 0);
           }, 0) /
             itens.length /
-            (1000 * 60 * 60),
+            (1000 * 60 * 60), // Converter para horas
         );
       } else {
         return itens.length;
@@ -83,38 +86,43 @@ export function processarDados(
     console.log('Dados por dia da semana:', { labels, data });
     return { labels, data };
   }
-  // Para mês: filtrar pelo mês desejado e agrupar por dia do mês
+
+  // Para mês: agrupamento por dia do mês
   else if (lapsoTemporal === 'mês') {
     const porDiaDoMes = {};
-
-    // Inicializar todos os dias do mês (1 a 31)
     for (let i = 1; i <= 31; i++) {
       porDiaDoMes[i] = [];
     }
 
-    // Filtrar e agrupar por dia do mês
     dados.forEach((item) => {
-      const data = parseDate(item[campoData]);
+      const data = parseDate(item[campoDataInicio]);
       if (data && (!mesDesejado || data.getMonth() + 1 === mesDesejado)) {
         const diaDoMes = data.getDate();
         porDiaDoMes[diaDoMes].push(item);
       }
     });
 
-    // Criar labels e data (apenas para dias com dados)
     const labels = Object.keys(porDiaDoMes).filter(
       (dia) => porDiaDoMes[dia].length > 0,
     );
     const data = labels.map((dia) => {
       const itens = porDiaDoMes[dia];
       if (tipoCalculo === 'média de tempo') {
+        if (!campoDataFim) {
+          console.error(
+            'campoDataFim é necessário para cálculo de média de tempo.',
+          );
+          return 0;
+        }
+
         return Math.round(
           itens.reduce((soma, item) => {
-            const data = parseDate(item[campoData]);
-            return soma + (data ? data.getTime() : 0);
+            const inicio = parseDate(item[campoDataInicio]);
+            const fim = parseDate(item[campoDataFim]);
+            return soma + (inicio && fim ? fim - inicio : 0);
           }, 0) /
             itens.length /
-            (1000 * 60 * 60),
+            (1000 * 60 * 60), // Converter para horas
         );
       } else {
         return itens.length;
@@ -123,7 +131,8 @@ export function processarDados(
 
     return { labels, data };
   }
-  // Para ano: agrupar por mês
+
+  // Para ano: agrupamento por mês
   else if (lapsoTemporal === 'ano') {
     const meses = [
       'Jan',
@@ -140,34 +149,38 @@ export function processarDados(
       'Dez',
     ];
     const porMes = {};
-
-    // Inicializar todos os meses
     meses.forEach((mes) => {
       porMes[mes] = [];
     });
 
-    // Agrupar por mês
     dados.forEach((item) => {
-      const data = parseDate(item[campoData]);
+      const data = parseDate(item[campoDataInicio]);
       if (data) {
         const mes = meses[data.getMonth()];
         porMes[mes].push(item);
       }
     });
 
-    // Criar labels e data
     const labels = meses;
     const data = labels.map((mes) => {
       const itens = porMes[mes];
       if (tipoCalculo === 'média de tempo') {
+        if (!campoDataFim) {
+          console.error(
+            'campoDataFim é necessário para cálculo de média de tempo.',
+          );
+          return 0;
+        }
+
         if (itens.length === 0) return 0;
         return Math.round(
           itens.reduce((soma, item) => {
-            const data = parseDate(item[campoData]);
-            return soma + (data ? data.getTime() : 0);
+            const inicio = parseDate(item[campoDataInicio]);
+            const fim = parseDate(item[campoDataFim]);
+            return soma + (inicio && fim ? fim - inicio : 0);
           }, 0) /
             itens.length /
-            (1000 * 60 * 60),
+            (1000 * 60 * 60), // Converter para horas
         );
       } else {
         return itens.length;
@@ -179,6 +192,7 @@ export function processarDados(
 
   return { labels: [], data: [] };
 }
+
 /**
  * Cria um gráfico de Rosca.
  */
