@@ -17,16 +17,20 @@ export function processarDados(
   const agora = new Date();
   const filtrados = dados.filter((item) => {
     const data = parseDate(item.data);
-    if (!data || isNaN(data.getTime())) return false; // Ignorar entradas inválidas
+    console.log('Data processada:', data, 'É válida?', !isNaN(data.getTime()));
     if (lapsoTemporal === 'semana') {
-      return (agora - data) / (1000 * 60 * 60 * 24) <= 7; // Últimos 7 dias
+      const diferencaDias = (agora - data) / (1000 * 60 * 60 * 24);
+      console.log('Diferença em dias:', diferencaDias);
+      return diferencaDias <= 7; // Últimos 7 dias
     } else if (lapsoTemporal === 'mês') {
-      return (
-        data.getFullYear() === agora.getFullYear() &&
-        (mesDesejado ? data.getMonth() + 1 === mesDesejado : true)
-      );
+      const mesmoAno = data.getFullYear() === agora.getFullYear();
+      const mesmoMes = mesDesejado ? data.getMonth() + 1 === mesDesejado : true;
+      console.log('Mesmo ano:', mesmoAno, 'Mesmo mês:', mesmoMes);
+      return mesmoAno && mesmoMes;
     } else if (lapsoTemporal === 'ano') {
-      return data.getFullYear() === agora.getFullYear();
+      const mesmoAno = data.getFullYear() === agora.getFullYear();
+      console.log('Mesmo ano:', mesmoAno);
+      return mesmoAno;
     }
     return false;
   });
