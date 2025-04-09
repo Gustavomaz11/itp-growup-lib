@@ -4,6 +4,61 @@ const chartsRegistry = {};
 const originalData = {};
 const filtrosAtivos = {};
 
+export function processarDados(
+  dados,
+  campoData, // Nome do campo contendo a data no formato "2023-01-04 20:12:35"
+  lapsoTemporal, // 'semana', 'mês' ou 'ano'
+  tipoCalculo, // 'média de tempo' ou 'contagem de atendimentos'
+  mesDesejado = null, // Apenas para o lapso 'mês'
+) {
+  // Conversão de strings de data para objetos Date
+  const parseDate = (str) => new Date(str.replace(' ', 'T'));
+
+  const agora = new Date();
+  const filtrados = dados.filter((item) => {
+    const data = parseDate(item[campoData]); // Usa o campo especificado
+    if (lapsoTemporal === 'semana') {
+      return (agora - data) / (1000 * 60 * 60 * 24) <= 7; // Últimos 7 dias
+    } else if (lapsoTemporal === 'mês') {
+      return (
+        data.getFullYear() === agora.getFullYear() &&
+        (mesDesejado ? data.getMonth() + 1 === mesDesejado : true)
+      );
+    } else if (lapsoTemporal === 'ano') {
+      return data.getFullYear() === agora.getFullYear();
+    }
+    return false;
+  });
+
+  const agrupados = filtrados.reduce((acc, item) => {
+    const data = parseDate(item[campoData]);
+    let chave;
+    if (lapsoTemporal === 'semana') {
+      chave = data.toLocaleDateString('pt-BR', { weekday: 'short' });
+    } else if (lapsoTemporal === 'mês') {
+      chave = data.getDate();
+    } else if (lapsoTemporal === 'ano') {
+      chave = data.toLocaleDateString('pt-BR', { month: 'short' });
+    }
+    if (!acc[chave]) acc[chave] = [];
+    acc[chave].push(data);
+    return acc;
+  }, {});
+
+  const labels = Object.keys(agrupados);
+  const data = Object.values(agrupados).map((datas) =>
+    tipoCalculo === 'média de tempo'
+      ? Math.round(
+          datas.reduce((soma, d) => soma + d.getTime(), 0) /
+            datas.length /
+            (1000 * 60 * 60), // Converte milissegundos para horas
+        )
+      : datas.length,
+  );
+
+  return { labels, data };
+}
+
 /**
  * Cria um gráfico de Rosca.
  */
