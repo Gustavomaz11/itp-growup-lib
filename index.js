@@ -16,7 +16,8 @@ export function processarDados(
 
   const agora = new Date();
   const filtrados = dados.filter((item) => {
-    const data = parseDate(item[campoData]); // Usa o campo especificado
+    const data = parseDate(item.data);
+    if (!data || isNaN(data.getTime())) return false; // Ignorar entradas inválidas
     if (lapsoTemporal === 'semana') {
       return (agora - data) / (1000 * 60 * 60 * 24) <= 7; // Últimos 7 dias
     } else if (lapsoTemporal === 'mês') {
