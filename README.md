@@ -9,6 +9,7 @@ Ideal para desenvolvedores que desejam criar dashboards interativos com **pouco 
 ## Recursos
 
 - **Gráficos Interativos**: Oferece gráficos com filtros dinâmicos acionados por legendas.
+- **Processamento de Dados Automatizada**: Gráfico processa os dados da sua requisição para facilitar processamento.
 - **Baseado em Chart.js**: Utiliza o poderoso Chart.js como base para renderização.
 - **Personalização Simples**: Configurações amigáveis para fácil adaptação.
 - **Compatibilidade**: Funciona com React.js e projetos JavaScript comuns.
@@ -33,116 +34,100 @@ Atualmente, a biblioteca oferece dois tipos de gráficos: **Gráfico de Rosca e 
 
 #### Exemplo de Uso
 ```bash
-itp.criarGraficoRosca(
-  graficoRosca,
-  {
-    labels: ['Baixa', 'Média', 'Alta', 'Urgente'],
-    data: [baixo, medio, alto, urgente],
-    backgroundColor: ['red', 'green', 'magenta', 'blue'],
-  },
-  'grupo1',
-  resposta,
-  {},
-  (totalAtendimentos) => {
-    qtd_atendimentos.textContent = totalAtendimentos;
-  }
-);
+itp.criarGrafico(ctx, tipo, parametro_busca, backgroundColor, chave, obj)
 ```
 
 ### Explicação de Parâmetros
 <ul>
-  <li><code>graficoRosca</code>, Seletor do JavaScript</li>
   <li><code>itp</code>: Método utilizado para acessar a função da biblioteca;</li>
-  <li><code>labels</code>: Legendas do gráfico;</li>
-  <li><code>data</code>: Dados que serão renderizados no gráfico;</li>
-  <li><code>backgroundColor</code>: Define cores do gráfico (opcional, cores padrão são usadas se omitido);</li>
-  <li><code>"grupo1"</code>: Grupo de gráficos que interagem com filtros. Vários grupos podem ser criados;</li>
-  <li><code>resposta</code>: Resposta da requisição no front-end (obrigatório em formato JSON);</li>
-  <li><code>{}</code>: Opções Personalizaveis;</li>
-  <li><code>Callback</code>: Função que exibe o total atualizado após a aplicação de filtros;</li>
+  <li><code>ctx</code>, Seletor do JavaScript</li>
+  <li><code>parametro_busca</code>: Campo do seu arquivo JSON que você quer que os dados sejam processados;</li>
+  <li><code>backgroundColor</code>: Define cores do gráfico, espera um array de parâmetro (opcional, cores padrão são usadas se omitido);</li>
+  <li><code>chave</code>: Grupo de gráficos que interagem com filtros. Vários grupos podem ser criados;</li>
+  <li><code>obj</code>: Resposta da requisição no front-end (obrigatório em formato JSON);</li>
 </ul>
 
 ### Processamento de Dados
-A biblioteca conta com uma função para processar dados, calculando **contagem de itens** ou **média de tempo**.
-
-#### Exemplo
-##### Contagem de Atendimentos
-```bash
-const resultadoMes = itp.processarDados(resposta, "data_solicitacao", "mês", "contagem de atendimentos", 1);
-```
-#### Média de Tempo
-```bash
-const resultadoMes = itp.processarDados(resposta, "data_solicitacao", "mês", "média de tempo", 1, "data_fechamento");
-```
-
-### Explicação de Parâmetros
-<ul>
-  <li><code>resposta</code>: Lista de objetos, como a resposta da requisição;</li>
-  <li><code>"data_solicitacao"</code>: Campo objeto a ser processado no formato <code>YYYY-MM-DD HH:MM:SS</code>;</li>
-  <li>
-    <strong>Intervalo:</strong>
-    <ul>
-      <li><code>"semana"</code>: Dados agrupados de domingo à sábado (de todo o ano);</li>
-      <li><code>"mês"</code>: Dados agrupado do dia 1 ao 30/31;</li>
-      <li><code>"ano"</code>: Dados agrupado de Janeiro a Dezembro;</li>
-    </ul>
-  </li>
-  <li>
-    <strong>Tipo de Cálculo:</strong>
-    <ul>
-      <li><code>"contagem de atendimentos"</code>: Retorna o número de objetos no intervalo;</li>
-      <li><code>"média de tempo"</code>: Calcula a média de tempo entre os campos <code>"data_solicitacao</code> e <code>data_fechamento</code>;</li>
-    </ul>
-  </li>
-  <li><code>1</code>: Mês escolhido pelo desenvolvedor, no caso: Janeiro;</li>
-  <li>Caso nenhum mês seja escolhido o parâmetro deve ser passado como <code>null</code>;</li>
-</ul>
-
-#### Exemplo do objeto processado
+A biblioteca conta com uma função para processar dados facilitando a inclusão dos dados nos gráficos.
 ```bash
 {
-  "codigo_atendimento": "ATD-000059",
-  "descricao_atendimento": "Descrição do atendimento 59",
+  "codigo_atendimento": "ATD-000001",
+  "descricao_atendimento": "Descrição do atendimento 1",
   "cliente": "Innovative Systems",
-  "solicitante": "Victor Dias",
-  "data_solicitacao": "2024-12-30 00:51:32",
-  "data_fechamento": "2025-01-01 19:51:32",
+  "solicitante": "Daniel Souza",
+  "data_solicitacao": "2023-01-04 11:12:35",
+  "servico": "Configuração de Rede",
+  "atendente": "Roberto Almeida",
   "prioridade": "Média",
-  "tempo_fechamento_hrs": 67
-}
+  "data_inicio_atendimento": "2023-01-04 20:12:35",
+  "tempo_inicio_hrs": 9,
+  "data_resolucao": "2023-01-05 18:12:35",
+  "tempo_resolucao_hrs": 22,
+  "data_fechamento": "2023-01-06 11:12:35",
+  "tempo_fechamento_hrs": 48,
+  "nota": "Excelente",
+  "interacoes": 10
+},
 ```
+**Exemplo**: Caso você queira que os seus dados processados sejam o campo <code>"prioridade"</code>, no exemplo em questão tem quatro tipos: Baixa, Média, Alta e Urgente.
+O processamento de dados irá retornar esses dados com quantitativos e unitários. Os unitários serão os tipos de prioridade que serão as labels do gráfico: Baixa, Média, Alta e Urgente.
+E os quantitativos serão quantos de cada label existe, que será exibido no gráfico.
+
+### Exemplo prático com esse JSON
+```bash
+itp.criarGrafico(ctx,'pie', "prioridade", ['blue', 'yellow', 'red', 'pink'], "grupo1", json)
+```
+### Retorno
+![image](https://github.com/user-attachments/assets/d26d6fe7-557c-4af2-9537-c442b0e89acb)
+
+
+Caso os parametro de busca que for colocado retorna datas, o algoritimo irá fazer a análise e contar referente a cada mês.
+```bash
+itp.criarGrafico(ctx4,'bar' , "data_solicitacao", ['pink', 'purple', 'yellow', 'green'], "grupo1", json)
+```
+### Retorno (Organização crescente dos meses em desenvolvimento)
+![image](https://github.com/user-attachments/assets/4fb1c8ab-4b77-489e-905e-639021eece66)
+
+
 
 ## Filtros
 A biblioteca oferece suporte a filtros dinâmicos que permitem interatividade entre gráficos agrupados.
 Os filtros são configuráveis através de **grupos de gráficos** e aplicados com base nos seguintes parâmetros:
 <ul>
-  <li><code>Campo de Dados:</code> Escolha o campo que será utilizado para filtrar os dados;</li>
   <li><code>Grupos de Gráficos:</code> Gráficos que pertencem ao mesmo grupo interagem entre si;</li>
-  <li><code>Callback de resumo:</code> Função que retorna o total de dados filtrados;</li>
+  <li><code>Multiplas seleções:</code> Gráficos se filtram por vários parâmetros;</li>
+  <li><code>Filtro:</code> Ativação e desativação do filtro apenas clicando na legenda do gráfico;</li>
 </ul>
 
 ### Exemplo de Configuração de Filtros
 ```bash
-itp.criarGraficoRosca(
-  graficoRosca,
-  {
-    labels: ['Aprovados', 'Pendentes', 'Rejeitados'],
-    data: [50, 30, 20],
-    backgroundColor: ['green', 'yellow', 'red'],
-  },
-  'grupo2', // Grupo para interação entre gráficos
-  resposta,
-  {},
-  (totalItens) => {
-    console.log(`Total de itens no filtro atual: ${totalItens}`);
-  }
-);
+itp.criarGrafico(ctx4,'bar' , "data_solicitacao", ['pink', 'purple', 'yellow', 'green'], "grupo1", json)
+                                                                                    // Marca o grupo pertencente ao gráfico
 ```
 ### Comportamento dos Filtros
 <ul>
-  <li><code>Interatividade</code>: Ao clicar em uma legenda, o filtro é aplicado e todos os gráficos do mesmo grupo são atualizados;</li>
-  <li><code>Total Dinâmico</code>: O callback retorna o total de itens ajustado ao filtro aplicado;</li>
+  <li>Como a resposta da requisição é enviada por parâmetro o processamento dos dados ocorre localmente não sendo necessário fazer outra requisição com os dados filtrados;</li>
+  <li><code>Total Dinâmico</code>: O callback retorna o total de itens ajustado ao filtro aplicado; (em desenvolvimento)</li> 
 </ul>
+
+## Tipos de Gráficos que a biblioteca suporta atualmente e os dados são filtráveis
+## bar (Barra)
+![image](https://github.com/user-attachments/assets/4fb1c8ab-4b77-489e-905e-639021eece66)
+
+## line (Linha)
+![image](https://github.com/user-attachments/assets/2324e8f5-1c41-4c85-98f3-d08ca0d6088b)
+
+## doughnut (Rosca)
+![image](https://github.com/user-attachments/assets/4ba3f866-7ad0-4cab-a892-fa7ace6f67dd)
+
+## pie (Pizza)
+![image](https://github.com/user-attachments/assets/d26d6fe7-557c-4af2-9537-c442b0e89acb)
+
+## polarArea (Area Polar)
+![image](https://github.com/user-attachments/assets/7002827a-45c4-46a1-af7b-40b4ac79a14a)
+
+## radar (Radar)
+![image](https://github.com/user-attachments/assets/942f4619-702e-47a8-84f1-e77f6e8492f9)
 
 ## Licença
 Esse projeto está licenciado sob a licença MIT. Consulte o arquivo LICENSE para mais detalhes.
