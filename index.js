@@ -1,350 +1,153 @@
-import Chart from 'chart.js/auto';
+// Variáveis globais
+var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
+var todosOsGraficos = []; // Lista de gráficos
 
-const chartsRegistry = {};
-const originalData = {};
-const filtrosAtivos = {};
+// Cache para nomes de meses
+const cacheMeses = {
+    "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+    "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+    "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
+};
 
-export function processarDados(
-  dados,
-  campoDataInicio,
-  lapsoTemporal,
-  tipoCalculo,
-  mesDesejado = null,
-  campoDataFim = null, // Novo parâmetro
-) {
-  // Verificação inicial de dados
-  if (!dados || !Array.isArray(dados) || dados.length === 0) {
-    console.warn('Dados inválidos ou vazios');
-    return { labels: [], data: [] };
-  }
-
-  console.log(`Processando ${dados.length} registros para ${lapsoTemporal}`);
-
-  // Função de parse de data mais robusta
-  const parseDate = (str) => {
-    if (!str) return null;
-    try {
-      return new Date(str);
-    } catch (e) {
-      console.error('Erro ao converter data:', str, e);
-      return null;
-    }
-  };
-
-  // Obter os dias da semana em português
-  const diasDaSemana = [
-    'Domingo',
-    'Segunda',
-    'Terça',
-    'Quarta',
-    'Quinta',
-    'Sexta',
-    'Sábado',
-  ];
-
-  // Para semana: agrupamento por dia da semana
-  if (lapsoTemporal === 'semana') {
-    const porDiaDaSemana = {};
-    diasDaSemana.forEach((dia) => {
-      porDiaDaSemana[dia] = [];
-    });
-
-    dados.forEach((item) => {
-      const data = parseDate(item[campoDataInicio]);
-      if (data) {
-        const diaDaSemana = diasDaSemana[data.getDay()];
-        porDiaDaSemana[diaDaSemana].push(item);
-      }
-    });
-
-    const labels = diasDaSemana;
-    const data = labels.map((dia) => {
-      const itens = porDiaDaSemana[dia];
-      if (tipoCalculo === 'média de tempo') {
-        if (!campoDataFim) {
-          console.error(
-            'campoDataFim é necessário para cálculo de média de tempo.',
-          );
-          return 0;
-        }
-
-        if (itens.length === 0) return 0;
-        return Math.round(
-          itens.reduce((soma, item) => {
-            const inicio = parseDate(item[campoDataInicio]);
-            const fim = parseDate(item[campoDataFim]);
-            return soma + (inicio && fim ? fim - inicio : 0);
-          }, 0) /
-            itens.length /
-            (1000 * 60 * 60), // Converter para horas
-        );
-      } else {
-        return itens.length;
-      }
-    });
-
-    console.log('Dados por dia da semana:', { labels, data });
-    return { labels, data };
-  }
-
-  // Para mês: agrupamento por dia do mês
-  else if (lapsoTemporal === 'mês') {
-    const porDiaDoMes = {};
-    for (let i = 1; i <= 31; i++) {
-      porDiaDoMes[i] = [];
+// Função para obter os dados atuais (considerando filtros ou dados originais)
+function getDadosAtuais(dadosOriginais) {
+    if (Object.keys(filtrosAtuais).length === 0) {
+        return dadosOriginais;
     }
 
-    dados.forEach((item) => {
-      const data = parseDate(item[campoDataInicio]);
-      if (data && (!mesDesejado || data.getMonth() + 1 === mesDesejado)) {
-        const diaDoMes = data.getDate();
-        porDiaDoMes[diaDoMes].push(item);
-      }
-    });
+    return dadosOriginais.filter(item =>
+        Object.entries(filtrosAtuais).every(([parametro, valores]) => {
+            let valorItem = item[parametro];
 
-    const labels = Object.keys(porDiaDoMes).filter(
-      (dia) => porDiaDoMes[dia].length > 0,
+            if (parametro.includes("data")) { // Verifica se o filtro é de data
+                const mes = valorItem?.slice(5, 7); // Extrai o mês (MM)
+                const nomeMes = cacheMeses[mes]; // Converte para o nome do mês
+                return valores.includes(nomeMes); // Compara com o filtro
+            }
+
+            return valores.includes(valorItem); // Filtro padrão
+        })
     );
-    const data = labels.map((dia) => {
-      const itens = porDiaDoMes[dia];
-      if (tipoCalculo === 'média de tempo') {
-        if (!campoDataFim) {
-          console.error(
-            'campoDataFim é necessário para cálculo de média de tempo.',
-          );
-          return 0;
-        }
+}
 
-        return Math.round(
-          itens.reduce((soma, item) => {
-            const inicio = parseDate(item[campoDataInicio]);
-            const fim = parseDate(item[campoDataFim]);
-            return soma + (inicio && fim ? fim - inicio : 0);
-          }, 0) /
-            itens.length /
-            (1000 * 60 * 60), // Converter para horas
-        );
-      } else {
-        return itens.length;
-      }
-    });
-
-    return { labels, data };
-  }
-
-  // Para ano: agrupamento por mês
-  else if (lapsoTemporal === 'ano') {
-    const meses = [
-      'Jan',
-      'Fev',
-      'Mar',
-      'Abr',
-      'Mai',
-      'Jun',
-      'Jul',
-      'Ago',
-      'Set',
-      'Out',
-      'Nov',
-      'Dez',
-    ];
-    const porMes = {};
-    meses.forEach((mes) => {
-      porMes[mes] = [];
-    });
+// Função otimizada para processar dados agrupados por mês ou outro parâmetro
+function processarDados(dados, parametro_busca) {
+    const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor); // Detecta formato de data/hora
+    const contagem = new Map(); // Substitui o objeto por um Map para melhor desempenho
 
     dados.forEach((item) => {
-      const data = parseDate(item[campoDataInicio]);
-      if (data) {
-        const mes = meses[data.getMonth()];
-        porMes[mes].push(item);
-      }
-    });
+        let chave = item[parametro_busca];
 
-    const labels = meses;
-    const data = labels.map((mes) => {
-      const itens = porMes[mes];
-      if (tipoCalculo === 'média de tempo') {
-        if (!campoDataFim) {
-          console.error(
-            'campoDataFim é necessário para cálculo de média de tempo.',
-          );
-          return 0;
+        if (chave) {
+            if (isData(chave)) {
+                const mes = chave.slice(5, 7); // Extrai o mês (MM)
+                chave = cacheMeses[mes]; // Obtém o nome do mês do cache
+            }
+
+            contagem.set(chave, (contagem.get(chave) || 0) + 1); // Incrementa a contagem
         }
-
-        if (itens.length === 0) return 0;
-        return Math.round(
-          itens.reduce((soma, item) => {
-            const inicio = parseDate(item[campoDataInicio]);
-            const fim = parseDate(item[campoDataFim]);
-            return soma + (inicio && fim ? fim - inicio : 0);
-          }, 0) /
-            itens.length /
-            (1000 * 60 * 60), // Converter para horas
-        );
-      } else {
-        return itens.length;
-      }
     });
 
-    return { labels, data };
-  }
-
-  return { labels: [], data: [] };
+    return {
+        labels: Array.from(contagem.keys()), // Extrai as chaves (nomes) como labels
+        valores: Array.from(contagem.values()), // Extrai os valores como contagem
+    };
 }
 
-/**
- * Cria um gráfico de Rosca.
- */
-export function criarGraficoRosca(
-  ctx,
-  dados,
-  chave,
-  obj,
-  opcoesPersonalizadas = {},
-  callbackTotalAtendimentos = null,
-) {
-  inicializarGrafico(chave, obj);
+// Função genérica para criar gráficos
+export function criarGrafico(ctx, tipo, parametro_busca, backgroundColor, chave, obj) {
+    const dadosOriginais = [...obj];
 
-  const configuracaoPadrao = {
-    type: 'doughnut',
-    data: {
-      labels: dados.labels,
-      datasets: [
-        {
-          data: dados.data,
-          backgroundColor: dados.backgroundColor || [
-            '#FF6384',
-            '#36A2EB',
-            '#FFCE56',
-          ],
-          hoverBackgroundColor: dados.hoverBackgroundColor || [
-            '#FF577F',
-            '#4A90E2',
-            '#FFD700',
-          ],
+    const { labels, valores } = processarDados(getDadosAtuais(dadosOriginais), parametro_busca);
+
+    const grafico = new Chart(ctx, {
+        type: tipo,
+        data: {
+            labels: labels,
+            datasets: [{
+                label: parametro_busca,
+                data: valores,
+                backgroundColor: backgroundColor.slice(0, labels.length),
+                borderWidth: 1,
+            }],
         },
-      ],
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            font: { size: 14 },
-            usePointStyle: true,
-          },
-          onClick: (_, legendItem) =>
-            aplicarFiltroPorChave(
-              chave,
-              legendItem.text,
-              callbackTotalAtendimentos,
-            ),
+        options: {
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: {
+                        // Exibe as legendas com cores
+                        generateLabels: (chart) => {
+                            const dataset = chart.data.datasets[0];
+                            return chart.data.labels.map((label, i) => ({
+                                text: label,
+                                fillStyle: dataset.backgroundColor[i],
+                                strokeStyle: dataset.borderColor ? dataset.borderColor[i] : dataset.backgroundColor[i],
+                                hidden: !chart.getDataVisibility(i),
+                                index: i,
+                            }));
+                        },
+                    },
+                    onClick: (e, legendItem) => {
+                        const legendaClicada = grafico.data.labels[legendItem.index];
+                        toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+                        atualizarTodosOsGraficos();
+                    },
+                },
+            },
+            scales: tipo === 'bar' || tipo === 'line' ? {
+                x: {
+                    beginAtZero: true,
+                },
+                y: {
+                    beginAtZero: true,
+                },
+            } : undefined,
         },
-        tooltip: {
-          callbacks: {
-            label: (context) => `${context.label}: ${context.raw}`,
-          },
-        },
-      },
-      cutout: 80,
-      ...opcoesPersonalizadas,
-    },
-  };
-
-  adicionarGrafico(chave, ctx, configuracaoPadrao);
-  calcularTotalAtendimentos(chave, callbackTotalAtendimentos); // Inicializa o total de atendimentos
+    });
+    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
 }
 
-/**
- * Inicializa um gráfico na chave especificada.
- */
-function inicializarGrafico(chave, obj) {
-  if (!chartsRegistry[chave]) {
-    chartsRegistry[chave] = [];
-    originalData[chave] = obj;
-    filtrosAtivos[chave] = [];
-  }
-}
-
-/**
- * Adiciona um gráfico à chave especificada no registro.
- */
-function adicionarGrafico(chave, ctx, configuracao) {
-  const chartInstance = new Chart(ctx, configuracao);
-  chartsRegistry[chave].push(chartInstance);
-}
-
-/**
- * Aplica ou remove um filtro para a chave especificada.
- */
-function aplicarFiltroPorChave(
-  chave,
-  labelSelecionada,
-  callbackTotalAtendimentos = null,
-) {
-  const filtros = filtrosAtivos[chave];
-
-  if (filtros.includes(labelSelecionada)) {
-    filtrosAtivos[chave] = filtros.filter(
-      (filtro) => filtro !== labelSelecionada,
-    );
-  } else {
-    filtrosAtivos[chave].push(labelSelecionada);
-  }
-
-  atualizarGraficos(chave, callbackTotalAtendimentos);
-}
-
-/**
- * Atualiza os gráficos associados a uma chave.
- */
-function atualizarGraficos(chave, callbackTotalAtendimentos = null) {
-  const dadosOriginais = originalData[chave];
-  const filtros = filtrosAtivos[chave];
-  const dadosFiltrados =
-    filtros.length > 0
-      ? dadosOriginais.filter((item) =>
-          filtros.some((filtro) => Object.values(item).includes(filtro)),
-        )
-      : dadosOriginais;
-
-  chartsRegistry[chave].forEach((chart) => {
-    if (chart.config.type === 'bar') {
-      chart.data.datasets.forEach((dataset, index) => {
-        const label = dataset.label;
-        const itemFiltrado = dadosFiltrados.find((item) =>
-          Object.values(item).includes(label),
-        );
-        dataset.data = chart.data.labels.map((_, i) =>
-          i === index && itemFiltrado ? itemFiltrado.valor : 0,
-        );
-      });
-    } else if (chart.config.type === 'doughnut') {
-      chart.data.datasets.forEach((dataset) => {
-        dataset.data = chart.data.labels.map(
-          (label) =>
-            dadosFiltrados.filter((item) => Object.values(item).includes(label))
-              .length,
-        );
-      });
+// Função para alternar um filtro
+function toggleFiltro(dadosOriginais, parametro, valor) {
+    if (!filtrosAtuais[parametro]) {
+        filtrosAtuais[parametro] = [];
     }
 
-    chart.update();
-  });
+    const index = filtrosAtuais[parametro].indexOf(valor);
+    if (index === -1) {
+        // Adiciona o valor ao filtro
+        filtrosAtuais[parametro].push(valor);
+    } else {
+        // Remove o valor do filtro
+        filtrosAtuais[parametro].splice(index, 1);
 
-  calcularTotalAtendimentos(chave, callbackTotalAtendimentos, dadosFiltrados);
+        // Se nenhum valor permanecer para o parâmetro, remove o parâmetro
+        if (filtrosAtuais[parametro].length === 0) {
+            delete filtrosAtuais[parametro];
+        }
+    }
 }
 
-/**
- * Calcula o total de atendimentos.
- */
-function calcularTotalAtendimentos(chave, callback, dadosFiltrados = null) {
-  const dados = dadosFiltrados || originalData[chave];
-  const totalAtendimentos = dados.length;
+// Função para atualizar todos os gráficos
+function atualizarTodosOsGraficos() {
+    todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
+        const { labels, valores } = processarDados(getDadosAtuais(dadosOriginais), parametro_busca);
+        grafico.data.labels = labels;
+        grafico.data.datasets[0].data = valores;
+        grafico.update();
+    });
+}
 
-  if (typeof callback === 'function') {
-    callback(totalAtendimentos);
-  }
+// Função para adicionar botões de filtro por meses na interface
+function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
+    Object.values(cacheMeses).forEach((mes) => {
+        const botaoMes = document.createElement("button");
+        botaoMes.innerText = mes;
+        botaoMes.onclick = () => {
+            toggleFiltro(dadosOriginais, parametro, mes);
+            atualizarTodosOsGraficos();
+        };
+        document.body.appendChild(botaoMes); // Adiciona o botão ao DOM
+    });
 }
