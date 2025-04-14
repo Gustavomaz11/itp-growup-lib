@@ -26,7 +26,7 @@ npm i gmt-charts-growup
 
 ### Usando CDN
 ```bash
-<script src="https://cdn.jsdelivr.net/npm/gmt-charts-growup@2.0.2/dist/index.umd.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gmt-charts-growup@2.0.11/dist/index.umd.js" defer></script>
 ```
 
 ## Utilização
