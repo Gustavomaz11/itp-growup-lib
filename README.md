@@ -21,7 +21,7 @@ Ideal para desenvolvedores que desejam criar dashboards interativos com **pouco 
 
 ### Usando NPM
 ```bash
-npm install gmt-growup-lib
+npm i gmt-charts-growup
 ```
 
 ### Usando CDN
