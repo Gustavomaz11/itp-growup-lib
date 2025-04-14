@@ -83,6 +83,16 @@ function calcularEstatisticas(dadosOriginais, parametro) {
   }
 }
 
+// Função para processar dados (exemplo básico)
+function processarDados(dados, parametro) {
+  const labels = [...new Set(dados.map((item) => item[parametro]))];
+  const valores = labels.map(
+    (label) => dados.filter((item) => item[parametro] === label).length,
+  );
+
+  return { labels, valores };
+}
+
 // Função genérica para criar gráficos
 export function criarGrafico(
   ctx,
