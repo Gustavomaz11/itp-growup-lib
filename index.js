@@ -1,9 +1,9 @@
 import Chart from 'chart.js/auto';
 
 // Variáveis globais
-var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
-var todosOsGraficos = []; // Lista de gráficos
-var estatisticasGlobais = {}; // Objeto para armazenar as estatísticas de cada gráfico
+let filtrosAtuais = {}; // Filtros ativos
+let todosOsGraficos = []; // Gráficos criados
+let estatisticasGlobais = {}; // Estatísticas globais
 
 // Cache para nomes de meses
 const cacheMeses = {
@@ -21,34 +21,29 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-// Função para obter os dados atuais (considerando filtros ou dados originais)
+// Função para obter os dados filtrados
 function getDadosAtuais(dadosOriginais) {
-  if (Object.keys(filtrosAtuais).length === 0) {
-    return dadosOriginais;
-  }
+  if (!Object.keys(filtrosAtuais).length) return dadosOriginais;
 
   return dadosOriginais.filter((item) =>
     Object.entries(filtrosAtuais).every(([parametro, valores]) => {
-      let valorItem = item[parametro];
-
+      const valorItem = item[parametro];
       if (parametro.includes('data')) {
-        // Verifica se o filtro é de data
-        const mes = valorItem?.slice(5, 7); // Extrai o mês (MM)
-        const nomeMes = cacheMeses[mes]; // Converte para o nome do mês
-        return valores.includes(nomeMes); // Compara com o filtro
+        const mes = valorItem?.slice(5, 7);
+        const nomeMes = cacheMeses[mes];
+        return valores.includes(nomeMes);
       }
-
-      return valores.includes(valorItem); // Filtro padrão
+      return valores.includes(valorItem);
     }),
   );
 }
 
-// Função para calcular estatísticas
+// Função para calcular estatísticas de forma eficiente
 function calcularEstatisticas(dadosOriginais, parametro) {
   const dados = getDadosAtuais(dadosOriginais);
-  const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor);
+  if (!dados.length) return { tipo: 'vazio' };
 
-  if (isData(dados[0]?.[parametro])) {
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dados[0][parametro])) {
     const tempos = dados.map((item) => new Date(item[parametro]).getTime());
     const mediaAtual = tempos.reduce((a, b) => a + b, 0) / tempos.length;
 
@@ -63,32 +58,30 @@ function calcularEstatisticas(dadosOriginais, parametro) {
       })
       .map((item) => new Date(item[parametro]).getTime());
 
-    const mediaMesAnterior =
-      temposMesAnterior.reduce((a, b) => a + b, 0) / temposMesAnterior.length ||
-      0;
+    const mediaMesAnterior = temposMesAnterior.length
+      ? temposMesAnterior.reduce((a, b) => a + b, 0) / temposMesAnterior.length
+      : 0;
 
     const variacaoPercentual = mediaMesAnterior
       ? ((mediaAtual - mediaMesAnterior) / mediaMesAnterior) * 100
       : null;
 
-    return {
-      tipo: 'media',
-      mediaAtual,
-      mediaMesAnterior,
-      variacaoPercentual,
-    };
-  } else {
-    const total = dados.length;
-    return { tipo: 'total', total };
+    return { tipo: 'media', mediaAtual, mediaMesAnterior, variacaoPercentual };
   }
+
+  return { tipo: 'total', total: dados.length };
 }
 
-// Função para processar dados (exemplo básico)
+// Processamento eficiente de dados para gráficos
 function processarDados(dados, parametro) {
-  const labels = [...new Set(dados.map((item) => item[parametro]))];
-  const valores = labels.map(
-    (label) => dados.filter((item) => item[parametro] === label).length,
-  );
+  const contagem = dados.reduce((map, item) => {
+    const valor = item[parametro];
+    map[valor] = (map[valor] || 0) + 1;
+    return map;
+  }, {});
+
+  const labels = Object.keys(contagem);
+  const valores = Object.values(contagem);
 
   return { labels, valores };
 }
@@ -97,25 +90,24 @@ function processarDados(dados, parametro) {
 export function criarGrafico(
   ctx,
   tipo,
-  parametro_busca,
+  parametro,
   backgroundColor,
   chave,
   obj,
 ) {
   const dadosOriginais = [...obj];
-
   const { labels, valores } = processarDados(
     getDadosAtuais(dadosOriginais),
-    parametro_busca,
+    parametro,
   );
 
   const grafico = new Chart(ctx, {
     type: tipo,
     data: {
-      labels: labels,
+      labels,
       datasets: [
         {
-          label: parametro_busca,
+          label: parametro,
           data: valores,
           backgroundColor: backgroundColor.slice(0, labels.length),
           borderWidth: 1,
@@ -126,23 +118,8 @@ export function criarGrafico(
       plugins: {
         legend: {
           display: true,
-          labels: {
-            generateLabels: (chart) => {
-              const dataset = chart.data.datasets[0];
-              return chart.data.labels.map((label, i) => ({
-                text: label,
-                fillStyle: dataset.backgroundColor[i],
-                strokeStyle: dataset.borderColor
-                  ? dataset.borderColor[i]
-                  : dataset.backgroundColor[i],
-                hidden: !chart.getDataVisibility(i),
-                index: i,
-              }));
-            },
-          },
           onClick: (e, legendItem) => {
-            const legendaClicada = grafico.data.labels[legendItem.index];
-            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+            toggleFiltro(dadosOriginais, parametro, labels[legendItem.index]);
             atualizarTodosOsGraficos();
           },
         },
@@ -150,64 +127,44 @@ export function criarGrafico(
       scales:
         tipo === 'bar' || tipo === 'line'
           ? {
-              x: {
-                beginAtZero: true,
-              },
-              y: {
-                beginAtZero: true,
-              },
+              x: { beginAtZero: true },
+              y: { beginAtZero: true },
             }
           : undefined,
     },
   });
 
-  // Calcula as estatísticas e armazena no objeto global
-  const estatisticas = calcularEstatisticas(dadosOriginais, parametro_busca);
+  const estatisticas = calcularEstatisticas(dadosOriginais, parametro);
   estatisticasGlobais[chave] = estatisticas;
-
-  todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+  todosOsGraficos.push({ grafico, dadosOriginais, parametro });
 }
 
-// Função para alternar um filtro
+// Função para alternar filtros de forma eficiente
 function toggleFiltro(dadosOriginais, parametro, valor) {
-  if (!filtrosAtuais[parametro]) {
-    filtrosAtuais[parametro] = [];
-  }
+  if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = new Set();
 
-  const index = filtrosAtuais[parametro].indexOf(valor);
-  if (index === -1) {
-    filtrosAtuais[parametro].push(valor);
+  if (filtrosAtuais[parametro].has(valor)) {
+    filtrosAtuais[parametro].delete(valor);
+    if (!filtrosAtuais[parametro].size) delete filtrosAtuais[parametro];
   } else {
-    filtrosAtuais[parametro].splice(index, 1);
-    if (filtrosAtuais[parametro].length === 0) {
-      delete filtrosAtuais[parametro];
-    }
+    filtrosAtuais[parametro].add(valor);
   }
 }
 
-// Função para atualizar todos os gráficos
+// Atualizar todos os gráficos
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach(
-    ({ grafico, dadosOriginais, parametro_busca, chave }) => {
-      const { labels, valores } = processarDados(
-        getDadosAtuais(dadosOriginais),
-        parametro_busca,
-      );
-      grafico.data.labels = labels;
-      grafico.data.datasets[0].data = valores;
-      grafico.update();
-
-      // Recalcula e atualiza as estatísticas no objeto global
-      const estatisticas = calcularEstatisticas(
-        dadosOriginais,
-        parametro_busca,
-      );
-      estatisticasGlobais[chave] = estatisticas;
-    },
-  );
+  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro }) => {
+    const { labels, valores } = processarDados(
+      getDadosAtuais(dadosOriginais),
+      parametro,
+    );
+    grafico.data.labels = labels;
+    grafico.data.datasets[0].data = valores;
+    grafico.update();
+  });
 }
 
-// Função para acessar as estatísticas globais
+// Função para obter estatísticas globais
 export function getEstatisticas(chave) {
   return estatisticasGlobais[chave] || null;
 }
