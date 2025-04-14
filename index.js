@@ -1,4 +1,5 @@
 import Chart from 'chart.js/auto';
+
 // Variáveis globais
 var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
 var todosOsGraficos = []; // Lista de gráficos
