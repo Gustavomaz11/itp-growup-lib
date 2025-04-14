@@ -106,7 +106,9 @@ export function criarGrafico(ctx, tipo, parametro_busca, backgroundColor, chave,
 
                         // Atualiza o total após interações
                         calcularTotal(dadosOriginais, (total) => {
-                            console.log(`O total de dados atualizados é: ${total}`);
+                            const d = {total}
+                            console.log(d)
+                            return d
                         });
                     },
                 },
