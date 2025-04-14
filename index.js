@@ -14,9 +14,9 @@ const cacheMeses = {
   '07': 'Julho',
   '08': 'Agosto',
   '09': 'Setembro',
-  10: 'Outubro',
-  11: 'Novembro',
-  12: 'Dezembro',
+  '10': 'Outubro',
+  '11': 'Novembro',
+  '12': 'Dezembro',
 };
 
 // Função para obter os dados atuais (considerando filtros ou dados originais)
@@ -209,7 +209,7 @@ function atualizarTodosOsGraficos() {
 }
 
 // Função para adicionar botões de filtro por meses na interface
-function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
+export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   Object.values(cacheMeses).forEach((mes) => {
     const botaoMes = document.createElement('button');
     botaoMes.innerText = mes;
