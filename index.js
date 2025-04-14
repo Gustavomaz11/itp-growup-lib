@@ -5,178 +5,225 @@ var todosOsGraficos = []; // Lista de gráficos
 
 // Cache para nomes de meses
 const cacheMeses = {
-    "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
-    "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
-    "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
+  '01': 'Janeiro',
+  '02': 'Fevereiro',
+  '03': 'Março',
+  '04': 'Abril',
+  '05': 'Maio',
+  '06': 'Junho',
+  '07': 'Julho',
+  '08': 'Agosto',
+  '09': 'Setembro',
+  10: 'Outubro',
+  11: 'Novembro',
+  12: 'Dezembro',
 };
 
 // Função para obter os dados atuais (considerando filtros ou dados originais)
 function getDadosAtuais(dadosOriginais) {
-    if (Object.keys(filtrosAtuais).length === 0) {
-        return dadosOriginais;
-    }
+  if (Object.keys(filtrosAtuais).length === 0) {
+    return dadosOriginais;
+  }
 
-    return dadosOriginais.filter(item =>
-        Object.entries(filtrosAtuais).every(([parametro, valores]) => {
-            let valorItem = item[parametro];
+  return dadosOriginais.filter((item) =>
+    Object.entries(filtrosAtuais).every(([parametro, valores]) => {
+      let valorItem = item[parametro];
 
-            if (parametro.includes("data")) { // Verifica se o filtro é de data
-                const mes = valorItem?.slice(5, 7); // Extrai o mês (MM)
-                const nomeMes = cacheMeses[mes]; // Converte para o nome do mês
-                return valores.includes(nomeMes); // Compara com o filtro
-            }
+      if (parametro.includes('data')) {
+        // Verifica se o filtro é de data
+        const mes = valorItem?.slice(5, 7); // Extrai o mês (MM)
+        const nomeMes = cacheMeses[mes]; // Converte para o nome do mês
+        return valores.includes(nomeMes); // Compara com o filtro
+      }
 
-            return valores.includes(valorItem); // Filtro padrão
-        })
-    );
+      return valores.includes(valorItem); // Filtro padrão
+    }),
+  );
 }
 
 // Função para calcular o total de dados e executar um callback
 function calcularTotal(dadosOriginais, callback) {
-    const dadosAtuais = getDadosAtuais(dadosOriginais);
-    const total = dadosAtuais.reduce((soma, item) => soma + 1, 0); // Conta o total de itens
-    if (callback && typeof callback === "function") {
-        callback(total); // Chama o callback com o total
-    }
-    return total; // Retorna o total
+  const dadosAtuais = getDadosAtuais(dadosOriginais);
+  const total = dadosAtuais.reduce((soma, item) => soma + 1, 0); // Conta o total de itens
+  if (callback && typeof callback === 'function') {
+    callback(total); // Chama o callback com o total
+  }
+  return total; // Retorna o total
 }
 
 // Função otimizada para processar dados agrupados por mês ou outro parâmetro
 function processarDados(dados, parametro_busca) {
-    const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor); // Detecta formato de data/hora
-    const contagem = new Map(); // Substitui o objeto por um Map para melhor desempenho
+  const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor); // Detecta formato de data/hora
+  const contagem = new Map(); // Substitui o objeto por um Map para melhor desempenho
 
-    dados.forEach((item) => {
-        let chave = item[parametro_busca];
+  dados.forEach((item) => {
+    let chave = item[parametro_busca];
 
-        if (chave) {
-            if (isData(chave)) {
-                const mes = chave.slice(5, 7); // Extrai o mês (MM)
-                chave = cacheMeses[mes]; // Obtém o nome do mês do cache
-            }
+    if (chave) {
+      if (isData(chave)) {
+        const mes = chave.slice(5, 7); // Extrai o mês (MM)
+        chave = cacheMeses[mes]; // Obtém o nome do mês do cache
+      }
 
-            contagem.set(chave, (contagem.get(chave) || 0) + 1); // Incrementa a contagem
-        }
-    });
+      contagem.set(chave, (contagem.get(chave) || 0) + 1); // Incrementa a contagem
+    }
+  });
 
-    return {
-        labels: Array.from(contagem.keys()), // Extrai as chaves (nomes) como labels
-        valores: Array.from(contagem.values()), // Extrai os valores como contagem
-    };
+  return {
+    labels: Array.from(contagem.keys()), // Extrai as chaves (nomes) como labels
+    valores: Array.from(contagem.values()), // Extrai os valores como contagem
+  };
 }
 
 // Função genérica para criar gráficos
-export function criarGrafico(ctx, tipo, parametro_busca, backgroundColor, chave, obj) {
-    const dadosOriginais = [...obj];
+export function criarGrafico(
+  ctx,
+  tipo,
+  parametro_busca,
+  backgroundColor,
+  chave,
+  obj,
+  callback,
+) {
+  const dadosOriginais = [...obj];
 
-    const { labels, valores } = processarDados(getDadosAtuais(dadosOriginais), parametro_busca);
+  // Processa os dados para o gráfico
+  const { labels, valores } = processarDados(
+    getDadosAtuais(dadosOriginais),
+    parametro_busca,
+  );
 
-    const grafico = new Chart(ctx, {
-        type: tipo,
-        data: {
-            labels: labels,
-            datasets: [{
-                label: parametro_busca,
-                data: valores,
-                backgroundColor: backgroundColor.slice(0, labels.length),
-                borderWidth: 1,
-            }],
+  // Calcula o total inicial
+  let totalInicial = 0;
+  calcularTotal(dadosOriginais, (total) => {
+    totalInicial = total; // Armazena o total inicial
+    if (callback) {
+      callback(total); // Chama o callback com o total inicial
+    }
+  });
+
+  // Cria o gráfico
+  const grafico = new Chart(ctx, {
+    type: tipo,
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: parametro_busca,
+          data: valores,
+          backgroundColor: backgroundColor.slice(0, labels.length),
+          borderWidth: 1,
         },
-        options: {
-            plugins: {
-                legend: {
-                    display: true,
-                    labels: {
-                        // Exibe as legendas com cores
-                        generateLabels: (chart) => {
-                            const dataset = chart.data.datasets[0];
-                            return chart.data.labels.map((label, i) => ({
-                                text: label,
-                                fillStyle: dataset.backgroundColor[i],
-                                strokeStyle: dataset.borderColor ? dataset.borderColor[i] : dataset.backgroundColor[i],
-                                hidden: !chart.getDataVisibility(i),
-                                index: i,
-                            }));
-                        },
-                    },
-                    onClick: (e, legendItem) => {
-                        const legendaClicada = grafico.data.labels[legendItem.index];
-                        toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
-                        atualizarTodosOsGraficos();
-
-                        // Atualiza o total após interações
-                        calcularTotal(dadosOriginais, (total) => {
-                            const d = {total}
-                            console.log(d)
-                            return d
-                        });
-                    },
-                },
+      ],
+    },
+    options: {
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            // Exibe as legendas com cores
+            generateLabels: (chart) => {
+              const dataset = chart.data.datasets[0];
+              return chart.data.labels.map((label, i) => ({
+                text: label,
+                fillStyle: dataset.backgroundColor[i],
+                strokeStyle: dataset.borderColor
+                  ? dataset.borderColor[i]
+                  : dataset.backgroundColor[i],
+                hidden: !chart.getDataVisibility(i),
+                index: i,
+              }));
             },
-            scales: tipo === 'bar' || tipo === 'line' ? {
-                x: {
-                    beginAtZero: true,
-                },
-                y: {
-                    beginAtZero: true,
-                },
-            } : undefined,
+          },
+          onClick: (e, legendItem) => {
+            const legendaClicada = grafico.data.labels[legendItem.index];
+            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+            atualizarTodosOsGraficos();
+
+            // Atualiza o total após interações
+            calcularTotal(dadosOriginais, (total) => {
+              grafico.total = total; // Atualiza o total no gráfico
+              if (callback) {
+                callback(total); // Chama o callback com o novo total
+              }
+            });
+          },
         },
-    });
+      },
+      scales:
+        tipo === 'bar' || tipo === 'line'
+          ? {
+              x: {
+                beginAtZero: true,
+              },
+              y: {
+                beginAtZero: true,
+              },
+            }
+          : undefined,
+    },
+  });
 
-    // Calcula o total inicialmente e registra no console
-    calcularTotal(dadosOriginais, (total) => {
-        console.log(`O total inicial de dados é: ${total}`);
-    });
+  // Associa o total inicial ao gráfico
+  grafico.total = totalInicial;
+  if (callback) {
+    callback(totalInicial); // Chama o callback com o total inicial
+  }
 
-    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+  // Adiciona o gráfico à lista global
+  todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
 }
 
 // Função para alternar um filtro
 function toggleFiltro(dadosOriginais, parametro, valor) {
-    if (!filtrosAtuais[parametro]) {
-        filtrosAtuais[parametro] = [];
-    }
+  if (!filtrosAtuais[parametro]) {
+    filtrosAtuais[parametro] = [];
+  }
 
-    const index = filtrosAtuais[parametro].indexOf(valor);
-    if (index === -1) {
-        // Adiciona o valor ao filtro
-        filtrosAtuais[parametro].push(valor);
-    } else {
-        // Remove o valor do filtro
-        filtrosAtuais[parametro].splice(index, 1);
+  const index = filtrosAtuais[parametro].indexOf(valor);
+  if (index === -1) {
+    // Adiciona o valor ao filtro
+    filtrosAtuais[parametro].push(valor);
+  } else {
+    // Remove o valor do filtro
+    filtrosAtuais[parametro].splice(index, 1);
 
-        // Se nenhum valor permanecer para o parâmetro, remove o parâmetro
-        if (filtrosAtuais[parametro].length === 0) {
-            delete filtrosAtuais[parametro];
-        }
+    // Se nenhum valor permanecer para o parâmetro, remove o parâmetro
+    if (filtrosAtuais[parametro].length === 0) {
+      delete filtrosAtuais[parametro];
     }
+  }
 }
 
 // Função para atualizar todos os gráficos
 function atualizarTodosOsGraficos() {
-    todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
-        const { labels, valores } = processarDados(getDadosAtuais(dadosOriginais), parametro_busca);
-        grafico.data.labels = labels;
-        grafico.data.datasets[0].data = valores;
-        grafico.update();
-    });
+  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
+    const { labels, valores } = processarDados(
+      getDadosAtuais(dadosOriginais),
+      parametro_busca,
+    );
+    grafico.data.labels = labels;
+    grafico.data.datasets[0].data = valores;
+    grafico.update();
+  });
 }
 
 // Função para adicionar botões de filtro por meses na interface
 function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
-    Object.values(cacheMeses).forEach((mes) => {
-        const botaoMes = document.createElement("button");
-        botaoMes.innerText = mes;
-        botaoMes.onclick = () => {
-            toggleFiltro(dadosOriginais, parametro, mes);
-            atualizarTodosOsGraficos();
+  Object.values(cacheMeses).forEach((mes) => {
+    const botaoMes = document.createElement('button');
+    botaoMes.innerText = mes;
+    botaoMes.onclick = () => {
+      toggleFiltro(dadosOriginais, parametro, mes);
+      atualizarTodosOsGraficos();
 
-            // Atualiza o total após interações de filtro
-            calcularTotal(dadosOriginais, (total) => {
-                console.log(`O total de dados filtrados após o clique no botão é: ${total}`);
-            });
-        };
-        document.body.appendChild(botaoMes); // Adiciona o botão ao DOM
-    });
+      // Atualiza o total após interações de filtro
+      calcularTotal(dadosOriginais, (total) => {
+        console.log(
+          `O total de dados filtrados após o clique no botão é: ${total}`,
+        );
+      });
+    };
+    document.body.appendChild(botaoMes); // Adiciona o botão ao DOM
+  });
 }
