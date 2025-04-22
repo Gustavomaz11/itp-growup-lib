@@ -15,9 +15,9 @@ const cacheMeses = {
   '07': 'Julho',
   '08': 'Agosto',
   '09': 'Setembro',
-  '10': 'Outubro',
-  '11': 'Novembro',
-  '12': 'Dezembro',
+  10: 'Outubro',
+  11: 'Novembro',
+  12: 'Dezembro',
 };
 
 // Função para obter os dados atuais (considerando filtros ou dados originais)
@@ -79,7 +79,7 @@ function processarDados(dados, parametro_busca) {
 // Função genérica para criar gráficos
 export function criarGrafico(
   ctx,
-  tipo,
+  tipoInicial,
   parametro_busca,
   backgroundColor,
   chave,
@@ -87,92 +87,114 @@ export function criarGrafico(
   callback,
 ) {
   const dadosOriginais = [...obj];
+  let tipoAtual = tipoInicial; // guarda o tipo atual do gráfico
+  let grafico; // referência ao Chart.js
 
-  // Processa os dados para o gráfico
-  const { labels, valores } = processarDados(
-    getDadosAtuais(dadosOriginais),
-    parametro_busca,
-  );
+  // função que (re)cria o chart e atualiza o array todosOsGraficos
+  function renderizarGrafico() {
+    // processa dados
+    const { labels, valores } = processarDados(
+      getDadosAtuais(dadosOriginais),
+      parametro_busca,
+    );
 
-  // Calcula o total inicial
-  let totalInicial = 0;
-  calcularTotal(dadosOriginais, (total) => {
-    totalInicial = total; // Armazena o total inicial
-    if (callback) {
-      callback(total); // Chama o callback com o total inicial
-    }
-  });
-
-  // Cria o gráfico
-  const grafico = new Chart(ctx, {
-    type: tipo,
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: parametro_busca,
-          data: valores,
-          backgroundColor: backgroundColor.slice(0, labels.length),
-          borderWidth: 1,
-        },
-      ],
-    },
-    options: {
-      plugins: {
-        legend: {
-          display: true,
-          labels: {
-            // Exibe as legendas com cores
-            generateLabels: (chart) => {
-              const dataset = chart.data.datasets[0];
-              return chart.data.labels.map((label, i) => ({
-                text: label,
-                fillStyle: dataset.backgroundColor[i],
-                strokeStyle: dataset.borderColor
-                  ? dataset.borderColor[i]
-                  : dataset.backgroundColor[i],
-                hidden: !chart.getDataVisibility(i),
-                index: i,
-              }));
+    // configurações básicas
+    const config = {
+      type: tipoAtual,
+      data: {
+        labels,
+        datasets: [
+          {
+            label: parametro_busca,
+            data: valores,
+            backgroundColor: backgroundColor.slice(0, labels.length),
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0];
+                return chart.data.labels.map((label, i) => ({
+                  text: label,
+                  fillStyle: ds.backgroundColor[i],
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                }));
+              },
+            },
+            onClick: (_, legendItem) => {
+              const valor = grafico.data.labels[legendItem.index];
+              toggleFiltro(dadosOriginais, parametro_busca, valor);
+              atualizarTodosOsGraficos();
+              calcularTotal(dadosOriginais, (total) => {
+                grafico.total = total;
+                if (callback) callback(total);
+              });
             },
           },
-          onClick: (e, legendItem) => {
-            const legendaClicada = grafico.data.labels[legendItem.index];
-            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
-            atualizarTodosOsGraficos();
-
-            // Atualiza o total após interações
-            calcularTotal(dadosOriginais, (total) => {
-              grafico.total = total; // Atualiza o total no gráfico
-              if (callback) {
-                callback(total); // Chama o callback com o novo total
-              }
-            });
-          },
         },
+        scales:
+          tipoAtual === 'bar' || tipoAtual === 'line'
+            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            : undefined,
       },
-      scales:
-        tipo === 'bar' || tipo === 'line'
-          ? {
-              x: {
-                beginAtZero: true,
-              },
-              y: {
-                beginAtZero: true,
-              },
-            }
-          : undefined,
-    },
-  });
+    };
 
-  // Associa o total inicial ao gráfico
-  grafico.total = totalInicial;
-  if (callback) {
-    callback(totalInicial); // Chama o callback com o total inicial
+    // se já existia um gráfico, destroi e atualiza referência em todosOsGraficos
+    if (grafico) {
+      const idx = todosOsGraficos.findIndex((item) => item.grafico === grafico);
+      if (idx !== -1) todosOsGraficos.splice(idx, 1);
+      grafico.destroy();
+    }
+
+    // cria o chart
+    grafico = new Chart(ctx, config);
+    // total inicial
+    calcularTotal(dadosOriginais, (total) => {
+      grafico.total = total;
+      if (callback) callback(total);
+    });
+
+    // registra no array global
+    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
   }
 
-  // Adiciona o gráfico à lista global
-  todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+  // chama pela primeira vez
+  renderizarGrafico();
+
+  // --- criação do select dinamicamente ---
+  const tiposDisponiveis = [
+    'bar',
+    'line',
+    'pie',
+    'doughnut',
+    'radar',
+    'polarArea',
+  ];
+  const select = document.createElement('select');
+  select.style.margin = '8px';
+  tiposDisponiveis.forEach((t) => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.text = t.charAt(0).toUpperCase() + t.slice(1);
+    if (t === tipoAtual) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  // ao mudar o tipo, atualiza e re-renderiza
+  select.addEventListener('change', () => {
+    tipoAtual = select.value;
+    renderizarGrafico();
+  });
+
+  // insere o select logo após o canvas
+  const canvasEl = ctx.canvas;
+  canvasEl.parentNode.insertBefore(select, canvasEl.nextSibling);
 }
 
 // Função para alternar um filtro
