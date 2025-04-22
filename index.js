@@ -1,24 +1,16 @@
 import Chart from 'chart.js/auto';
 
 // Variáveis globais
-var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
-var todosOsGraficos = []; // Lista de gráficos
+var filtrosAtuais     = {};    // Objeto para armazenar os filtros ativos
+var todosOsGraficos   = [];    // Lista de gráficos
 var periodoComparacao = 'month'; // 'day' | 'week' | 'month' | 'year'
 
 // Cache para nomes de meses
 const cacheMeses = {
-  '01': 'Janeiro',
-  '02': 'Fevereiro',
-  '03': 'Março',
-  '04': 'Abril',
-  '05': 'Maio',
-  '06': 'Junho',
-  '07': 'Julho',
-  '08': 'Agosto',
-  '09': 'Setembro',
-  10: 'Outubro',
-  11: 'Novembro',
-  12: 'Dezembro',
+  '01': 'Janeiro',  '02': 'Fevereiro', '03': 'Março',
+  '04': 'Abril',    '05': 'Maio',       '06': 'Junho',
+  '07': 'Julho',    '08': 'Agosto',     '09': 'Setembro',
+  '10': 'Outubro',  '11': 'Novembro',   '12': 'Dezembro',
 };
 
 // --- 1. Select de período de comparação ---
@@ -28,17 +20,17 @@ export function adicionarSelectComparacao() {
   const label = document.createElement('label');
   label.innerText = 'Comparar com: ';
   const select = document.createElement('select');
-  ['day', 'week', 'month', 'year'].forEach((p) => {
+  ['day','week','month','year'].forEach((p) => {
     const opt = document.createElement('option');
     opt.value = p;
-    opt.text = { day: 'Dia', week: 'Semana', month: 'Mês', year: 'Ano' }[p];
+    opt.text  = ({ day:'Dia', week:'Semana', month:'Mês', year:'Ano' })[p];
     if (p === periodoComparacao) opt.selected = true;
     select.appendChild(opt);
   });
   select.onchange = () => {
     periodoComparacao = select.value;
     // ao mudar o período, re-renderiza todos
-    todosOsGraficos.forEach(({ grafico, render }) => {
+    todosOsGraficos.forEach(({grafico, render}) => {
       grafico.destroy();
       render();
     });
@@ -54,40 +46,24 @@ function getInterval(period, offset = 0) {
   let start, end;
   switch (period) {
     case 'day': {
-      start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() + offset,
-      );
-      end = new Date(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate() + 1,
-      );
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+      end   = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
       break;
     }
     case 'week': {
       const dow = now.getDay() || 7; // Domingo = 7
-      start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() - dow + 1 + offset * 7,
-      );
-      end = new Date(
-        start.getFullYear(),
-        start.getMonth(),
-        start.getDate() + 7,
-      );
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow + 1 + offset*7);
+      end   = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
       break;
     }
     case 'month': {
       start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-      end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1);
+      end   = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1);
       break;
     }
     case 'year': {
       start = new Date(now.getFullYear() + offset, 0, 1);
-      end = new Date(now.getFullYear() + offset + 1, 0, 1);
+      end   = new Date(now.getFullYear() + offset + 1, 0, 1);
       break;
     }
   }
@@ -98,21 +74,14 @@ function getInterval(period, offset = 0) {
 function calcularComparacao(dados, campoData) {
   const { start: currStart, end: currEnd } = getInterval(periodoComparacao, 0);
   const { start: prevStart, end: prevEnd } = getInterval(periodoComparacao, -1);
-  const parseDate = (item) => new Date(item[campoData]);
-  const inInterval = (d, [s, e]) => d >= s && d < e;
+  const parseDate = item => new Date(item[campoData]);
+  const inInterval = (d, [s,e]) => d >= s && d < e;
 
-  const currentCount = dados.filter((i) =>
-    inInterval(parseDate(i), [currStart, currEnd]),
-  ).length;
-  const previousCount = dados.filter((i) =>
-    inInterval(parseDate(i), [prevStart, prevEnd]),
-  ).length;
-  const percent =
-    previousCount === 0
-      ? currentCount === 0
-        ? 0
-        : 100
-      : ((currentCount - previousCount) / previousCount) * 100;
+  const currentCount = dados.filter(i => inInterval(parseDate(i), [currStart, currEnd])).length;
+  const previousCount= dados.filter(i => inInterval(parseDate(i), [prevStart, prevEnd])).length;
+  const percent = previousCount === 0
+    ? (currentCount === 0 ? 0 : 100)
+    : ((currentCount - previousCount) / previousCount) * 100;
 
   return { current: currentCount, previous: previousCount, percent };
 }
@@ -120,29 +89,29 @@ function calcularComparacao(dados, campoData) {
 // --- 4. Filtragem e total ---
 function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
-  return dadosOriginais.filter((item) =>
+  return dadosOriginais.filter(item =>
     Object.entries(filtrosAtuais).every(([param, vals]) => {
       let val = item[param];
       if (param.includes('data')) {
-        const m = val?.slice(5, 7);
+        const m = val?.slice(5,7);
         return vals.includes(cacheMeses[m]);
       }
       return vals.includes(val);
-    }),
+    })
   );
 }
 
 function processarDados(dados, parametro_busca) {
-  const isData = (v) => /^\d{4}-\d{2}-\d{2}/.test(v);
+  const isData = v => /^\d{4}-\d{2}-\d{2}/.test(v);
   const cont = new Map();
-  dados.forEach((item) => {
+  dados.forEach(item => {
     let chave = item[parametro_busca];
     if (!chave) return;
     if (isData(chave)) {
-      const m = chave.slice(5, 7);
+      const m = chave.slice(5,7);
       chave = cacheMeses[m];
     }
-    cont.set(chave, (cont.get(chave) || 0) + 1);
+    cont.set(chave, (cont.get(chave)||0) + 1);
   });
   return {
     labels: Array.from(cont.keys()),
@@ -158,7 +127,7 @@ export function criarGrafico(
   backgroundColor,
   chaveLabel,
   obj,
-  callback, // função(total, stats)
+  callback // função(total, stats)
 ) {
   const dadosOriginais = [...obj];
   let tipoAtual = tipoInicial;
@@ -172,14 +141,12 @@ export function criarGrafico(
       type: tipoAtual,
       data: {
         labels,
-        datasets: [
-          {
-            label: chaveLabel,
-            data: valores,
-            backgroundColor: backgroundColor.slice(0, labels.length),
-            borderWidth: 1,
-          },
-        ],
+        datasets: [{
+          label: chaveLabel,
+          data: valores,
+          backgroundColor: backgroundColor.slice(0, labels.length),
+          borderWidth: 1
+        }]
       },
       options: {
         plugins: {
@@ -187,25 +154,24 @@ export function criarGrafico(
             onClick: (_, legendItem) => {
               const valor = grafico.data.labels[legendItem.index];
               toggleFiltro(parametro_busca, valor);
-              todosOsGraficos.forEach(({ grafico, render }) => {
+              todosOsGraficos.forEach(({grafico, render}) => {
                 grafico.destroy();
                 render();
               });
-            },
-          },
+            }
+          }
         },
-        scales:
-          tipoAtual === 'bar' || tipoAtual === 'line'
-            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-            : undefined,
-      },
+        scales: (tipoAtual==='bar'||tipoAtual==='line')
+          ? { x:{ beginAtZero:true }, y:{ beginAtZero:true } }
+          : undefined
+      }
     };
 
     if (grafico) grafico.destroy();
     grafico = new Chart(ctx, config);
 
     // calcula total e stats
-    const total = valores.reduce((a, b) => a + b, 0);
+    const total = valores.reduce((a,b)=>a+b, 0);
     const stats = calcularComparacao(dadosFiltrados, 'data_solicitacao');
     if (callback) callback(total, stats);
 
@@ -217,14 +183,11 @@ export function criarGrafico(
     }
     estatDiv.innerText =
       `${stats.current} itens  ` +
-      `(${stats.percent >= 0 ? '+' : ''}${stats.percent.toFixed(
-        1,
-      )}% vs. ${periodoComparacao} anterior)`;
+      `(${stats.percent>=0?'+':''}${stats.percent.toFixed(1)}% vs. ${periodoComparacao} anterior)`;
 
     // armazena para re-render
-    const idx = todosOsGraficos.findIndex((o) => o.grafico === grafico);
-    if (idx === -1)
-      todosOsGraficos.push({ grafico, render: renderizarGrafico });
+    const idx = todosOsGraficos.findIndex(o=>o.grafico===grafico);
+    if (idx===-1) todosOsGraficos.push({ grafico, render: renderizarGrafico });
     else todosOsGraficos[idx] = { grafico, render: renderizarGrafico };
   }
 
@@ -234,11 +197,11 @@ export function criarGrafico(
   const container = document.createElement('div');
   container.style.margin = '8px 0';
   const sel = document.createElement('select');
-  ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].forEach((t) => {
+  ['bar','line','pie','doughnut','radar','polarArea'].forEach(t => {
     const o = document.createElement('option');
     o.value = t;
-    o.text = t.charAt(0).toUpperCase() + t.slice(1);
-    if (t === tipoAtual) o.selected = true;
+    o.text  = t.charAt(0).toUpperCase()+t.slice(1);
+    if (t===tipoAtual) o.selected = true;
     sel.appendChild(o);
   });
   sel.onchange = () => {
@@ -253,22 +216,22 @@ export function criarGrafico(
 function toggleFiltro(param, valor) {
   if (!filtrosAtuais[param]) filtrosAtuais[param] = [];
   const idx = filtrosAtuais[param].indexOf(valor);
-  if (idx === -1) filtrosAtuais[param].push(valor);
-  else filtrosAtuais[param].splice(idx, 1);
-  if (filtrosAtuais[param].length === 0) delete filtrosAtuais[param];
+  if (idx===-1) filtrosAtuais[param].push(valor);
+  else filtrosAtuais[param].splice(idx,1);
+  if (filtrosAtuais[param].length===0) delete filtrosAtuais[param];
 }
 
 // --- 7. Botões de filtro de mês ---
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   const container = document.createElement('div');
   container.style.margin = '12px 0';
-  Object.values(cacheMeses).forEach((m) => {
+  Object.values(cacheMeses).forEach(m => {
     const btn = document.createElement('button');
     btn.innerText = m;
     btn.style.margin = '2px';
     btn.onclick = () => {
       toggleFiltro(parametro, m);
-      todosOsGraficos.forEach(({ grafico, render }) => {
+      todosOsGraficos.forEach(({grafico, render})=>{
         grafico.destroy();
         render();
       });
