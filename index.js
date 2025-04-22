@@ -3,6 +3,7 @@ import Chart from 'chart.js/auto';
 // Variáveis globais
 var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
 var todosOsGraficos = []; // Lista de gráficos
+var periodoComparacao = 'month'; // 'day' | 'week' | 'month' | 'year'
 
 // Cache para nomes de meses
 const cacheMeses = {
@@ -20,92 +21,160 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-// Função para obter os dados atuais (considerando filtros ou dados originais)
-function getDadosAtuais(dadosOriginais) {
-  if (Object.keys(filtrosAtuais).length === 0) {
-    return dadosOriginais;
+// --- 1. Select de período de comparação ---
+export function adicionarSelectComparacao() {
+  const container = document.createElement('div');
+  container.style.margin = '16px 0';
+  const label = document.createElement('label');
+  label.innerText = 'Comparar com: ';
+  const select = document.createElement('select');
+  ['day', 'week', 'month', 'year'].forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.text = { day: 'Dia', week: 'Semana', month: 'Mês', year: 'Ano' }[p];
+    if (p === periodoComparacao) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => {
+    periodoComparacao = select.value;
+    // ao mudar o período, re-renderiza todos
+    todosOsGraficos.forEach(({ grafico, render }) => {
+      grafico.destroy();
+      render();
+    });
+  };
+  label.appendChild(select);
+  container.appendChild(label);
+  document.body.insertBefore(container, document.body.firstChild);
+}
+
+// --- 2. Intervalos de data ---
+function getInterval(period, offset = 0) {
+  const now = new Date();
+  let start, end;
+  switch (period) {
+    case 'day': {
+      start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + offset,
+      );
+      end = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate() + 1,
+      );
+      break;
+    }
+    case 'week': {
+      const dow = now.getDay() || 7; // Domingo = 7
+      start = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - dow + 1 + offset * 7,
+      );
+      end = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate() + 7,
+      );
+      break;
+    }
+    case 'month': {
+      start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1);
+      break;
+    }
+    case 'year': {
+      start = new Date(now.getFullYear() + offset, 0, 1);
+      end = new Date(now.getFullYear() + offset + 1, 0, 1);
+      break;
+    }
   }
+  return { start, end };
+}
 
+// --- 3. Cálculo de comparação ---
+function calcularComparacao(dados, campoData) {
+  const { start: currStart, end: currEnd } = getInterval(periodoComparacao, 0);
+  const { start: prevStart, end: prevEnd } = getInterval(periodoComparacao, -1);
+  const parseDate = (item) => new Date(item[campoData]);
+  const inInterval = (d, [s, e]) => d >= s && d < e;
+
+  const currentCount = dados.filter((i) =>
+    inInterval(parseDate(i), [currStart, currEnd]),
+  ).length;
+  const previousCount = dados.filter((i) =>
+    inInterval(parseDate(i), [prevStart, prevEnd]),
+  ).length;
+  const percent =
+    previousCount === 0
+      ? currentCount === 0
+        ? 0
+        : 100
+      : ((currentCount - previousCount) / previousCount) * 100;
+
+  return { current: currentCount, previous: previousCount, percent };
+}
+
+// --- 4. Filtragem e total ---
+function getDadosAtuais(dadosOriginais) {
+  if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
   return dadosOriginais.filter((item) =>
-    Object.entries(filtrosAtuais).every(([parametro, valores]) => {
-      let valorItem = item[parametro];
-
-      if (parametro.includes('data')) {
-        // Verifica se o filtro é de data
-        const mes = valorItem?.slice(5, 7); // Extrai o mês (MM)
-        const nomeMes = cacheMeses[mes]; // Converte para o nome do mês
-        return valores.includes(nomeMes); // Compara com o filtro
+    Object.entries(filtrosAtuais).every(([param, vals]) => {
+      let val = item[param];
+      if (param.includes('data')) {
+        const m = val?.slice(5, 7);
+        return vals.includes(cacheMeses[m]);
       }
-
-      return valores.includes(valorItem); // Filtro padrão
+      return vals.includes(val);
     }),
   );
 }
 
-// Função para calcular o total de dados e executar um callback
-function calcularTotal(dadosOriginais, callback) {
-  const dadosAtuais = getDadosAtuais(dadosOriginais);
-  const total = dadosAtuais.reduce((soma, item) => soma + 1, 0); // Conta o total de itens
-  if (callback && typeof callback === 'function') {
-    callback(total); // Chama o callback com o total
-  }
-  return total; // Retorna o total
-}
-
-// Função otimizada para processar dados agrupados por mês ou outro parâmetro
 function processarDados(dados, parametro_busca) {
-  const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor); // Detecta formato de data/hora
-  const contagem = new Map(); // Substitui o objeto por um Map para melhor desempenho
-
+  const isData = (v) => /^\d{4}-\d{2}-\d{2}/.test(v);
+  const cont = new Map();
   dados.forEach((item) => {
     let chave = item[parametro_busca];
-
-    if (chave) {
-      if (isData(chave)) {
-        const mes = chave.slice(5, 7); // Extrai o mês (MM)
-        chave = cacheMeses[mes]; // Obtém o nome do mês do cache
-      }
-
-      contagem.set(chave, (contagem.get(chave) || 0) + 1); // Incrementa a contagem
+    if (!chave) return;
+    if (isData(chave)) {
+      const m = chave.slice(5, 7);
+      chave = cacheMeses[m];
     }
+    cont.set(chave, (cont.get(chave) || 0) + 1);
   });
-
   return {
-    labels: Array.from(contagem.keys()), // Extrai as chaves (nomes) como labels
-    valores: Array.from(contagem.values()), // Extrai os valores como contagem
+    labels: Array.from(cont.keys()),
+    valores: Array.from(cont.values()),
   };
 }
 
-// Função genérica para criar gráficos
+// --- 5. Criação de gráfico estendido ---
 export function criarGrafico(
   ctx,
   tipoInicial,
   parametro_busca,
   backgroundColor,
-  chave,
+  chaveLabel,
   obj,
-  callback,
+  callback, // função(total, stats)
 ) {
   const dadosOriginais = [...obj];
-  let tipoAtual = tipoInicial; // guarda o tipo atual do gráfico
-  let grafico; // referência ao Chart.js
+  let tipoAtual = tipoInicial;
+  let grafico, estatDiv;
 
-  // função que (re)cria o chart e atualiza o array todosOsGraficos
   function renderizarGrafico() {
-    // processa dados
-    const { labels, valores } = processarDados(
-      getDadosAtuais(dadosOriginais),
-      parametro_busca,
-    );
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    const { labels, valores } = processarDados(dadosFiltrados, parametro_busca);
 
-    // configurações básicas
     const config = {
       type: tipoAtual,
       data: {
         labels,
         datasets: [
           {
-            label: parametro_busca,
+            label: chaveLabel,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
             borderWidth: 1,
@@ -115,25 +184,12 @@ export function criarGrafico(
       options: {
         plugins: {
           legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((label, i) => ({
-                  text: label,
-                  fillStyle: ds.backgroundColor[i],
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
-              },
-            },
             onClick: (_, legendItem) => {
               const valor = grafico.data.labels[legendItem.index];
-              toggleFiltro(dadosOriginais, parametro_busca, valor);
-              atualizarTodosOsGraficos();
-              calcularTotal(dadosOriginais, (total) => {
-                grafico.total = total;
-                if (callback) callback(total);
+              toggleFiltro(parametro_busca, valor);
+              todosOsGraficos.forEach(({ grafico, render }) => {
+                grafico.destroy();
+                render();
               });
             },
           },
@@ -145,108 +201,79 @@ export function criarGrafico(
       },
     };
 
-    // se já existia um gráfico, destroi e atualiza referência em todosOsGraficos
-    if (grafico) {
-      const idx = todosOsGraficos.findIndex((item) => item.grafico === grafico);
-      if (idx !== -1) todosOsGraficos.splice(idx, 1);
-      grafico.destroy();
-    }
-
-    // cria o chart
+    if (grafico) grafico.destroy();
     grafico = new Chart(ctx, config);
-    // total inicial
-    calcularTotal(dadosOriginais, (total) => {
-      grafico.total = total;
-      if (callback) callback(total);
-    });
 
-    // registra no array global
-    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+    // calcula total e stats
+    const total = valores.reduce((a, b) => a + b, 0);
+    const stats = calcularComparacao(dadosFiltrados, 'data_solicitacao');
+    if (callback) callback(total, stats);
+
+    // exibe variação
+    if (!estatDiv) {
+      estatDiv = document.createElement('div');
+      estatDiv.style.margin = '4px 0 12px';
+      ctx.canvas.parentNode.insertBefore(estatDiv, ctx.canvas.nextSibling);
+    }
+    estatDiv.innerText =
+      `${stats.current} itens  ` +
+      `(${stats.percent >= 0 ? '+' : ''}${stats.percent.toFixed(
+        1,
+      )}% vs. ${periodoComparacao} anterior)`;
+
+    // armazena para re-render
+    const idx = todosOsGraficos.findIndex((o) => o.grafico === grafico);
+    if (idx === -1)
+      todosOsGraficos.push({ grafico, render: renderizarGrafico });
+    else todosOsGraficos[idx] = { grafico, render: renderizarGrafico };
   }
 
-  // chama pela primeira vez
   renderizarGrafico();
 
-  // --- criação do select dinamicamente ---
-  const tiposDisponiveis = [
-    'bar',
-    'line',
-    'pie',
-    'doughnut',
-    'radar',
-    'polarArea',
-  ];
-  const select = document.createElement('select');
-  select.style.margin = '8px';
-  tiposDisponiveis.forEach((t) => {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.text = t.charAt(0).toUpperCase() + t.slice(1);
-    if (t === tipoAtual) opt.selected = true;
-    select.appendChild(opt);
+  // select de tipo
+  const container = document.createElement('div');
+  container.style.margin = '8px 0';
+  const sel = document.createElement('select');
+  ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].forEach((t) => {
+    const o = document.createElement('option');
+    o.value = t;
+    o.text = t.charAt(0).toUpperCase() + t.slice(1);
+    if (t === tipoAtual) o.selected = true;
+    sel.appendChild(o);
   });
-
-  // ao mudar o tipo, atualiza e re-renderiza
-  select.addEventListener('change', () => {
-    tipoAtual = select.value;
+  sel.onchange = () => {
+    tipoAtual = sel.value;
     renderizarGrafico();
-  });
-
-  // insere o select logo após o canvas
-  const canvasEl = ctx.canvas;
-  canvasEl.parentNode.insertBefore(select, canvasEl.nextSibling);
+  };
+  container.appendChild(sel);
+  ctx.canvas.parentNode.insertBefore(container, ctx.canvas.nextSibling);
 }
 
-// Função para alternar um filtro
-function toggleFiltro(dadosOriginais, parametro, valor) {
-  if (!filtrosAtuais[parametro]) {
-    filtrosAtuais[parametro] = [];
-  }
-
-  const index = filtrosAtuais[parametro].indexOf(valor);
-  if (index === -1) {
-    // Adiciona o valor ao filtro
-    filtrosAtuais[parametro].push(valor);
-  } else {
-    // Remove o valor do filtro
-    filtrosAtuais[parametro].splice(index, 1);
-
-    // Se nenhum valor permanecer para o parâmetro, remove o parâmetro
-    if (filtrosAtuais[parametro].length === 0) {
-      delete filtrosAtuais[parametro];
-    }
-  }
+// --- 6. Filtros ---
+function toggleFiltro(param, valor) {
+  if (!filtrosAtuais[param]) filtrosAtuais[param] = [];
+  const idx = filtrosAtuais[param].indexOf(valor);
+  if (idx === -1) filtrosAtuais[param].push(valor);
+  else filtrosAtuais[param].splice(idx, 1);
+  if (filtrosAtuais[param].length === 0) delete filtrosAtuais[param];
 }
 
-// Função para atualizar todos os gráficos
-function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
-    const { labels, valores } = processarDados(
-      getDadosAtuais(dadosOriginais),
-      parametro_busca,
-    );
-    grafico.data.labels = labels;
-    grafico.data.datasets[0].data = valores;
-    grafico.update();
-  });
-}
-
-// Função para adicionar botões de filtro por meses na interface
+// --- 7. Botões de filtro de mês ---
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
-  Object.values(cacheMeses).forEach((mes) => {
-    const botaoMes = document.createElement('button');
-    botaoMes.innerText = mes;
-    botaoMes.onclick = () => {
-      toggleFiltro(dadosOriginais, parametro, mes);
-      atualizarTodosOsGraficos();
-
-      // Atualiza o total após interações de filtro
-      calcularTotal(dadosOriginais, (total) => {
-        console.log(
-          `O total de dados filtrados após o clique no botão é: ${total}`,
-        );
+  const container = document.createElement('div');
+  container.style.margin = '12px 0';
+  Object.values(cacheMeses).forEach((m) => {
+    const btn = document.createElement('button');
+    btn.innerText = m;
+    btn.style.margin = '2px';
+    btn.onclick = () => {
+      toggleFiltro(parametro, m);
+      todosOsGraficos.forEach(({ grafico, render }) => {
+        grafico.destroy();
+        render();
       });
     };
-    document.body.appendChild(botaoMes); // Adiciona o botão ao DOM
+    container.appendChild(btn);
   });
+  document.body.appendChild(container);
 }
