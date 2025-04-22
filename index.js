@@ -99,7 +99,7 @@ export function limparFiltros() {
 
 // Cria gráfico interativo
 export function criarGrafico(
-  ctx,
+  canvas,
   tipo,
   parametro_busca,
   backgroundColor,
@@ -108,7 +108,7 @@ export function criarGrafico(
   callback,
 ) {
   const dadosOriginais = [...obj];
-  const idCanvas = ctx.id || `grafico-${Date.now()}`;
+  const idCanvas = canvas.id || `grafico-${Date.now()}`;
 
   const { labels, valores } = processarDados(
     getDadosAtuais(dadosOriginais),
@@ -136,16 +136,19 @@ export function criarGrafico(
   `;
   selectTipos.className = 'tipo-grafico-select';
 
-  // Move o canvas para dentro do container visual
-  const canvas = document.getElementById(idCanvas);
-  container.appendChild(selectTipos);
-  container.appendChild(canvas);
+  // Clona o canvas original para evitar conflitos no DOM
+  const novoCanvas = canvas.cloneNode(true);
+  const ctx = novoCanvas.getContext('2d');
 
-  // Renderiza o container no body (ou local desejado)
-  canvas.parentNode.insertBefore(container, canvas);
+  // Monta a estrutura do container
+  container.appendChild(selectTipos);
+  container.appendChild(novoCanvas);
+
+  // Substitui o canvas antigo pelo container com canvas novo
+  canvas.parentNode.replaceChild(container, canvas);
 
   // Criação inicial do gráfico
-  let grafico = new Chart(canvas, {
+  let grafico = new Chart(ctx, {
     type: tipo,
     data: {
       labels,
@@ -200,19 +203,14 @@ export function criarGrafico(
   });
 
   grafico.total = totalInicial;
-
-  // Adiciona à lista global para reuso
   todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
 
   // Atualiza o tipo do gráfico dinamicamente
   selectTipos.addEventListener('change', () => {
     const novoTipo = selectTipos.value;
-
-    // Remove gráfico anterior
     grafico.destroy();
 
-    // Recria com novo tipo
-    grafico = new Chart(canvas, {
+    grafico = new Chart(ctx, {
       type: novoTipo,
       data: {
         labels,
