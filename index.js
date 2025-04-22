@@ -1,7 +1,8 @@
 import Chart from 'chart.js/auto';
 
-// Regex pré-compilada para detectar data-hora YYYY-MM-DD HH:MM:SS
-const DATA_HORA_REGEX = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+// Variáveis globais
+let filtrosAtuais = {}; // Filtros ativos
+let todosOsGraficos = []; // Lista de gráficos
 
 // Cache de nomes dos meses
 const cacheMeses = {
@@ -19,173 +20,203 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-// Estado global
-let filtrosAtuais = {};
-const todosOsGraficos = [];
+// Detecta formato data-hora YYYY-MM-DD HH:MM:SS
+const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor);
 
-// Detecta se um valor segue o formato data-hora
-function isData(valor) {
-  return DATA_HORA_REGEX.test(valor);
-}
-
-// Aplica filtros e retorna array filtrado
+// Obtém dados com filtros aplicados
 function getDadosAtuais(dadosOriginais) {
-  if (!Object.keys(filtrosAtuais).length) return dadosOriginais;
+  if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
+
   return dadosOriginais.filter((item) =>
-    Object.entries(filtrosAtuais).every(([param, vals]) => {
-      let v = item[param];
-      if (param.includes('data') && isData(v)) {
-        v = cacheMeses[v.slice(5, 7)];
+    Object.entries(filtrosAtuais).every(([parametro, valores]) => {
+      let valorItem = item[parametro];
+      if (parametro.includes('data')) {
+        const mes = valorItem?.slice(5, 7);
+        return new Set(valores).has(cacheMeses[mes]);
       }
-      return vals.includes(v);
+      return new Set(valores).has(valorItem);
     }),
   );
 }
 
-// Conta total de itens filtrados (mantido para compatibilidade)
+// Total de itens filtrados
 function calcularTotal(dadosOriginais, callback) {
   const total = getDadosAtuais(dadosOriginais).length;
   if (typeof callback === 'function') callback(total);
   return total;
 }
 
-// Agrupa e conta ocorrências por parâmetro (ou mês)
-function processarDados(dados, parametro) {
+// Agrupa dados por um parâmetro
+function processarDados(dados, parametro_busca) {
   const contagem = new Map();
-  for (const item of dados) {
-    let chave = item[parametro];
+
+  dados.forEach((item) => {
+    let chave = item[parametro_busca];
     if (chave && isData(chave)) {
-      chave = cacheMeses[chave.slice(5, 7)];
+      const mes = chave.slice(5, 7);
+      chave = cacheMeses[mes];
     }
-    if (chave != null) {
-      contagem.set(chave, (contagem.get(chave) || 0) + 1);
-    }
-  }
+    if (chave) contagem.set(chave, (contagem.get(chave) || 0) + 1);
+  });
+
   return {
-    labels: [...contagem.keys()],
-    valores: [...contagem.values()],
+    labels: Array.from(contagem.keys()),
+    valores: Array.from(contagem.values()),
   };
 }
 
-// Função que calcula estatísticas básicas de um array de números
-function calcularEstatisticas(valores) {
-  const n = valores.length;
-  if (n === 0) {
-    return {
-      total: 0,
-      media: 0,
-      mediana: 0,
-      moda: null,
-      variancia: 0,
-      desvioPadrao: 0,
-    };
-  }
-  const total = valores.reduce((s, v) => s + v, 0);
-  const media = total / n;
-  const sorted = [...valores].sort((a, b) => a - b);
-  const mediana =
-    n % 2 === 0
-      ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
-      : sorted[Math.floor(n / 2)];
-  const freq = sorted.reduce((f, v) => {
-    f[v] = (f[v] || 0) + 1;
-    return f;
-  }, {});
-  let moda = null,
-    maxF = 0;
-  for (const [v, f] of Object.entries(freq)) {
-    if (f > maxF) {
-      maxF = f;
-      moda = Number(v);
-    }
-  }
-  const variancia = valores.reduce((s, v) => s + (v - media) ** 2, 0) / n;
-  const desvioPadrao = Math.sqrt(variancia);
-
-  return { total, media, mediana, moda, variancia, desvioPadrao };
-}
-
-// Expor função para obter estatísticas diretamente
-export function obterEstatisticas(dadosOriginais, parametro) {
-  const dados = getDadosAtuais(dadosOriginais);
-  const { valores } = processarDados(dados, parametro);
-  return calcularEstatisticas(valores);
-}
-
-// Toggle de filtro
+// Adiciona ou remove valor no filtro
 function toggleFiltro(dadosOriginais, parametro, valor) {
-  const arr = filtrosAtuais[parametro] || (filtrosAtuais[parametro] = []);
-  const idx = arr.indexOf(valor);
-  if (idx === -1) arr.push(valor);
-  else {
-    arr.splice(idx, 1);
-    if (!arr.length) delete filtrosAtuais[parametro];
+  if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
+
+  const index = filtrosAtuais[parametro].indexOf(valor);
+  if (index === -1) {
+    filtrosAtuais[parametro].push(valor);
+  } else {
+    filtrosAtuais[parametro].splice(index, 1);
+    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
   }
 }
 
-// Atualiza todos os charts na página
+// Atualiza todos os gráficos criados
 function atualizarTodosOsGraficos() {
-  for (const { grafico, dadosOriginais, parametro } of todosOsGraficos) {
+  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
     const { labels, valores } = processarDados(
       getDadosAtuais(dadosOriginais),
-      parametro,
+      parametro_busca,
     );
     grafico.data.labels = labels;
     grafico.data.datasets[0].data = valores;
     grafico.update();
-  }
+  });
 }
 
-// Limpa filtros
+// Função pública para remover todos os filtros
 export function limparFiltros() {
   filtrosAtuais = {};
   atualizarTodosOsGraficos();
 }
 
-// Cria gráfico interativo com estatísticas embutidas
+// Cria gráfico interativo
 export function criarGrafico(
   canvas,
   tipo,
-  parametro,
+  parametro_busca,
   backgroundColor,
-  chaveLabel,
-  dadosSource,
+  chave,
+  obj,
   callback,
 ) {
-  const dadosOriginais = [...dadosSource];
+  const dadosOriginais = [...obj];
+  const idCanvas = canvas.id || `grafico-${Date.now()}`;
+
+  const { labels, valores } = processarDados(
+    getDadosAtuais(dadosOriginais),
+    parametro_busca,
+  );
+
+  const totalInicial = calcularTotal(dadosOriginais, callback);
+
+  // Cria um container para o gráfico + seletor
   const container = document.createElement('div');
   container.className = 'grafico-container';
 
-  // Dropdown de tipos
   const selectTipos = document.createElement('select');
+  selectTipos.innerHTML = `
+    <option value="bar" ${tipo === 'bar' ? 'selected' : ''}>Barras</option>
+    <option value="line" ${tipo === 'line' ? 'selected' : ''}>Linha</option>
+    <option value="pie" ${tipo === 'pie' ? 'selected' : ''}>Pizza</option>
+    <option value="doughnut" ${
+      tipo === 'doughnut' ? 'selected' : ''
+    }>Rosquinha</option>
+    <option value="radar" ${tipo === 'radar' ? 'selected' : ''}>Radar</option>
+    <option value="polarArea" ${
+      tipo === 'polarArea' ? 'selected' : ''
+    }>Área Polar</option>
+  `;
   selectTipos.className = 'tipo-grafico-select';
-  ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].forEach((t) => {
-    selectTipos.innerHTML += `<option value="${t}" ${
-      t === tipo ? 'selected' : ''
-    }>${t}</option>`;
+
+  // Clona o canvas original para evitar conflitos no DOM
+  const novoCanvas = canvas.cloneNode(true);
+  const ctx = novoCanvas.getContext('2d');
+
+  // Monta a estrutura do container
+  container.appendChild(selectTipos);
+  container.appendChild(novoCanvas);
+
+  // Substitui o canvas antigo pelo container com canvas novo
+  canvas.parentNode.replaceChild(container, canvas);
+
+  // Criação inicial do gráfico
+  let grafico = new Chart(ctx, {
+    type: tipo,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: parametro_busca,
+          data: valores,
+          backgroundColor: backgroundColor.slice(0, labels.length),
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              const valor = context.raw;
+              const total = context.chart.total || 1;
+              const percentual = ((valor / total) * 100).toFixed(1);
+              return `${context.label}: ${valor} (${percentual}%)`;
+            },
+          },
+        },
+        legend: {
+          display: true,
+          labels: {
+            generateLabels: (chart) => {
+              const dataset = chart.data.datasets[0];
+              return chart.data.labels.map((label, i) => ({
+                text: label,
+                fillStyle: dataset.backgroundColor[i],
+                strokeStyle: dataset.backgroundColor[i],
+                hidden: !chart.getDataVisibility(i),
+                index: i,
+              }));
+            },
+          },
+          onClick: (e, legendItem) => {
+            const legendaClicada = grafico.data.labels[legendItem.index];
+            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+            atualizarTodosOsGraficos();
+            grafico.total = calcularTotal(dadosOriginais, callback);
+          },
+        },
+      },
+      scales:
+        tipo === 'bar' || tipo === 'line'
+          ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+          : undefined,
+    },
   });
 
-  // Novo canvas para Chart.js
-  const novoCanvas = canvas.cloneNode();
-  const ctx = novoCanvas.getContext('2d');
-  canvas.parentNode.replaceChild(container, canvas);
-  container.append(selectTipos, novoCanvas);
+  grafico.total = totalInicial;
+  todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
 
-  // Função para (re)criar o chart
-  let grafico;
-  const redraw = (chartType) => {
-    const dados = getDadosAtuais(dadosOriginais);
-    const { labels, valores } = processarDados(dados, parametro);
-    const stats = calcularEstatisticas(valores);
+  // Atualiza o tipo do gráfico dinamicamente
+  selectTipos.addEventListener('change', () => {
+    const novoTipo = selectTipos.value;
+    grafico.destroy();
 
-    if (grafico) grafico.destroy();
     grafico = new Chart(ctx, {
-      type: chartType,
+      type: novoTipo,
       data: {
         labels,
         datasets: [
           {
-            label: chaveLabel || parametro,
+            label: parametro_busca,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
             borderWidth: 1,
@@ -196,52 +227,68 @@ export function criarGrafico(
         plugins: {
           tooltip: {
             callbacks: {
-              label(ctx) {
-                const v = ctx.raw;
-                const pct = ((v / stats.total) * 100).toFixed(1);
-                return `${ctx.label}: ${v} (${pct}%)`;
+              label: function (context) {
+                const valor = context.raw;
+                const total = context.chart.total || 1;
+                const percentual = ((valor / total) * 100).toFixed(1);
+                return `${context.label}: ${valor} (${percentual}%)`;
               },
             },
           },
           legend: {
-            onClick(e, item) {
-              const lbl = grafico.data.labels[item.index];
-              toggleFiltro(dadosOriginais, parametro, lbl);
+            display: true,
+            labels: {
+              generateLabels: (chart) => {
+                const dataset = chart.data.datasets[0];
+                return chart.data.labels.map((label, i) => ({
+                  text: label,
+                  fillStyle: dataset.backgroundColor[i],
+                  strokeStyle: dataset.backgroundColor[i],
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                }));
+              },
+            },
+            onClick: (e, legendItem) => {
+              const legendaClicada = grafico.data.labels[legendItem.index];
+              toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
               atualizarTodosOsGraficos();
+              grafico.total = calcularTotal(dadosOriginais, callback);
             },
           },
         },
-        scales: ['bar', 'line'].includes(chartType)
-          ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-          : undefined,
+        scales:
+          novoTipo === 'bar' || novoTipo === 'line'
+            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            : undefined,
       },
     });
 
-    grafico.estatisticas = stats;
-    callback && callback(stats);
-    return grafico;
-  };
-
-  // Inicializa
-  todosOsGraficos.push({ grafico: redraw(tipo), dadosOriginais, parametro });
-  selectTipos.addEventListener('change', () => redraw(selectTipos.value));
+    grafico.total = calcularTotal(dadosOriginais, callback);
+  });
 }
 
-// Botões para filtrar meses
+// Adiciona UI de botões de filtro por mês
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   let container = document.getElementById('filtros');
   if (!container) {
     container = document.createElement('div');
     container.id = 'filtros';
+    container.className = 'filtro-container';
     document.body.appendChild(container);
   }
+
   Object.values(cacheMeses).forEach((mes) => {
-    const btn = document.createElement('button');
-    btn.innerText = mes;
-    btn.onclick = () => {
+    const botaoMes = document.createElement('button');
+    botaoMes.innerText = mes;
+    botaoMes.className = 'filtro-botao';
+    botaoMes.onclick = () => {
       toggleFiltro(dadosOriginais, parametro, mes);
       atualizarTodosOsGraficos();
+      calcularTotal(dadosOriginais, (total) =>
+        console.log(`Total filtrado após clique: ${total}`),
+      );
     };
-    container.append(btn);
+    container.appendChild(botaoMes);
   });
 }
