@@ -1,10 +1,9 @@
 import Chart from 'chart.js/auto';
 
 // Variáveis globais
-let filtrosAtuais = {}; // Filtros ativos
-let todosOsGraficos = []; // Lista de gráficos
+let filtrosAtuais = {};
+let todosOsGraficos = [];
 
-// Cache de nomes dos meses
 const cacheMeses = {
   '01': 'Janeiro',
   '02': 'Fevereiro',
@@ -20,10 +19,8 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-// Detecta formato data-hora YYYY-MM-DD HH:MM:SS
 const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor);
 
-// Obtém dados com filtros aplicados
 function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
 
@@ -39,14 +36,12 @@ function getDadosAtuais(dadosOriginais) {
   );
 }
 
-// Total de itens filtrados
 function calcularTotal(dadosOriginais, callback) {
   const total = getDadosAtuais(dadosOriginais).length;
   if (typeof callback === 'function') callback(total);
   return total;
 }
 
-// Agrupa dados por um parâmetro
 function processarDados(dados, parametro_busca) {
   const contagem = new Map();
 
@@ -65,7 +60,6 @@ function processarDados(dados, parametro_busca) {
   };
 }
 
-// Adiciona ou remove valor no filtro
 function toggleFiltro(dadosOriginais, parametro, valor) {
   if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
 
@@ -78,7 +72,6 @@ function toggleFiltro(dadosOriginais, parametro, valor) {
   }
 }
 
-// Atualiza todos os gráficos criados
 function atualizarTodosOsGraficos() {
   todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
     const { labels, valores } = processarDados(
@@ -91,13 +84,11 @@ function atualizarTodosOsGraficos() {
   });
 }
 
-// Função pública para remover todos os filtros
 export function limparFiltros() {
   filtrosAtuais = {};
   atualizarTodosOsGraficos();
 }
 
-// Cria gráfico interativo
 export function criarGrafico(
   canvas,
   tipo,
@@ -109,15 +100,12 @@ export function criarGrafico(
 ) {
   const dadosOriginais = [...obj];
   const idCanvas = canvas.id || `grafico-${Date.now()}`;
-
   const { labels, valores } = processarDados(
     getDadosAtuais(dadosOriginais),
     parametro_busca,
   );
-
   const totalInicial = calcularTotal(dadosOriginais, callback);
 
-  // Cria um container para o gráfico + seletor
   const container = document.createElement('div');
   container.className = 'grafico-container';
 
@@ -136,20 +124,15 @@ export function criarGrafico(
   `;
   selectTipos.className = 'tipo-grafico-select';
 
-  // Clona o canvas original para evitar conflitos no DOM
   const novoCanvas = canvas.cloneNode(true);
   const ctx = novoCanvas.getContext('2d');
 
-  // Monta a estrutura do container
   container.appendChild(selectTipos);
   container.appendChild(novoCanvas);
-
-  // Substitui o canvas antigo pelo container com canvas novo
   canvas.parentNode.replaceChild(container, canvas);
 
-  // Criação inicial do gráfico
   let grafico = new Chart(ctx, {
-    type: tipo,
+    type,
     data: {
       labels,
       datasets: [
@@ -161,56 +144,29 @@ export function criarGrafico(
         },
       ],
     },
-    options: {
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              const valor = context.raw;
-              const total = context.chart.total || 1;
-              const percentual = ((valor / total) * 100).toFixed(1);
-              return `${context.label}: ${valor} (${percentual}%)`;
-            },
-          },
-        },
-        legend: {
-          display: true,
-          labels: {
-            generateLabels: (chart) => {
-              const dataset = chart.data.datasets[0];
-              return chart.data.labels.map((label, i) => ({
-                text: label,
-                fillStyle: dataset.backgroundColor[i],
-                strokeStyle: dataset.backgroundColor[i],
-                hidden: !chart.getDataVisibility(i),
-                index: i,
-              }));
-            },
-          },
-          onClick: (e, legendItem) => {
-            const legendaClicada = grafico.data.labels[legendItem.index];
-            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
-            atualizarTodosOsGraficos();
-            grafico.total = calcularTotal(dadosOriginais, callback);
-          },
-        },
-      },
-      scales:
-        tipo === 'bar' || tipo === 'line'
-          ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-          : undefined,
-    },
+    options: getOpcoesGrafico(
+      tipo,
+      dadosOriginais,
+      parametro_busca,
+      callback,
+      () => grafico,
+    ),
   });
 
   grafico.total = totalInicial;
   todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
 
-  // Atualiza o tipo do gráfico dinamicamente
   selectTipos.addEventListener('change', () => {
     const novoTipo = selectTipos.value;
     grafico.destroy();
 
-    grafico = new Chart(ctx, {
+    const canvasSubstituto = document.createElement('canvas');
+    canvasSubstituto.id = idCanvas;
+    container.replaceChild(canvasSubstituto, container.querySelector('canvas'));
+
+    const novoCtx = canvasSubstituto.getContext('2d');
+
+    grafico = new Chart(novoCtx, {
       type: novoTipo,
       data: {
         labels,
@@ -223,52 +179,75 @@ export function criarGrafico(
           },
         ],
       },
-      options: {
-        plugins: {
-          tooltip: {
-            callbacks: {
-              label: function (context) {
-                const valor = context.raw;
-                const total = context.chart.total || 1;
-                const percentual = ((valor / total) * 100).toFixed(1);
-                return `${context.label}: ${valor} (${percentual}%)`;
-              },
-            },
-          },
-          legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const dataset = chart.data.datasets[0];
-                return chart.data.labels.map((label, i) => ({
-                  text: label,
-                  fillStyle: dataset.backgroundColor[i],
-                  strokeStyle: dataset.backgroundColor[i],
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
-              },
-            },
-            onClick: (e, legendItem) => {
-              const legendaClicada = grafico.data.labels[legendItem.index];
-              toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
-              atualizarTodosOsGraficos();
-              grafico.total = calcularTotal(dadosOriginais, callback);
-            },
-          },
-        },
-        scales:
-          novoTipo === 'bar' || novoTipo === 'line'
-            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-            : undefined,
-      },
+      options: getOpcoesGrafico(
+        novoTipo,
+        dadosOriginais,
+        parametro_busca,
+        callback,
+        () => grafico,
+      ),
     });
 
     grafico.total = calcularTotal(dadosOriginais, callback);
+
+    const indexGrafico = todosOsGraficos.findIndex(
+      (g) => g.parametro_busca === parametro_busca,
+    );
+    if (indexGrafico !== -1) {
+      todosOsGraficos[indexGrafico].grafico = grafico;
+    }
   });
 }
 
-// Adiciona UI de botões de filtro por mês
+function getOpcoesGrafico(
+  tipo,
+  dadosOriginais,
+  parametro_busca,
+  callback,
+  getGrafico,
+) {
+  return {
+    plugins: {
+      tooltip: {
+        callbacks: {
+          label: function (context) {
+            const valor = context.raw;
+            const total = context.chart.total || 1;
+            const percentual = ((valor / total) * 100).toFixed(1);
+            return `${context.label}: ${valor} (${percentual}%)`;
+          },
+        },
+      },
+      legend: {
+        display: true,
+        labels: {
+          generateLabels: (chart) => {
+            const dataset = chart.data.datasets[0];
+            return chart.data.labels.map((label, i) => ({
+              text: label,
+              fillStyle: dataset.backgroundColor[i],
+              strokeStyle: dataset.backgroundColor[i],
+              hidden: !chart.getDataVisibility(i),
+              index: i,
+            }));
+          },
+        },
+        onClick: (e, legendItem) => {
+          const grafico = getGrafico();
+          const legendaClicada = grafico.data.labels[legendItem.index];
+          toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+          atualizarTodosOsGraficos();
+          grafico.total = calcularTotal(dadosOriginais, callback);
+        },
+      },
+    },
+    scales:
+      tipo === 'bar' || tipo === 'line'
+        ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+        : undefined,
+  };
+}
+
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   let container = document.getElementById('filtros');
   if (!container) {
