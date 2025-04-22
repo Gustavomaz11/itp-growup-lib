@@ -1,10 +1,10 @@
 import Chart from 'chart.js/auto';
 
 // Variáveis globais
-var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
-var todosOsGraficos = []; // Lista de gráficos
+let filtrosAtuais = {}; // Filtros ativos
+let todosOsGraficos = []; // Lista de gráficos
 
-// Cache para nomes de meses
+// Cache de nomes dos meses
 const cacheMeses = {
   '01': 'Janeiro',
   '02': 'Fevereiro',
@@ -15,188 +15,70 @@ const cacheMeses = {
   '07': 'Julho',
   '08': 'Agosto',
   '09': 'Setembro',
-  '10': 'Outubro',
-  '11': 'Novembro',
-  '12': 'Dezembro',
+  10: 'Outubro',
+  11: 'Novembro',
+  12: 'Dezembro',
 };
 
-// Função para obter os dados atuais (considerando filtros ou dados originais)
+// Detecta formato data-hora YYYY-MM-DD HH:MM:SS
+const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor);
+
+// Obtém dados com filtros aplicados
 function getDadosAtuais(dadosOriginais) {
-  if (Object.keys(filtrosAtuais).length === 0) {
-    return dadosOriginais;
-  }
+  if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
 
   return dadosOriginais.filter((item) =>
     Object.entries(filtrosAtuais).every(([parametro, valores]) => {
       let valorItem = item[parametro];
-
       if (parametro.includes('data')) {
-        // Verifica se o filtro é de data
-        const mes = valorItem?.slice(5, 7); // Extrai o mês (MM)
-        const nomeMes = cacheMeses[mes]; // Converte para o nome do mês
-        return valores.includes(nomeMes); // Compara com o filtro
+        const mes = valorItem?.slice(5, 7);
+        return new Set(valores).has(cacheMeses[mes]);
       }
-
-      return valores.includes(valorItem); // Filtro padrão
+      return new Set(valores).has(valorItem);
     }),
   );
 }
 
-// Função para calcular o total de dados e executar um callback
+// Total de itens filtrados
 function calcularTotal(dadosOriginais, callback) {
-  const dadosAtuais = getDadosAtuais(dadosOriginais);
-  const total = dadosAtuais.reduce((soma, item) => soma + 1, 0); // Conta o total de itens
-  if (callback && typeof callback === 'function') {
-    callback(total); // Chama o callback com o total
-  }
-  return total; // Retorna o total
+  const total = getDadosAtuais(dadosOriginais).length;
+  if (typeof callback === 'function') callback(total);
+  return total;
 }
 
-// Função otimizada para processar dados agrupados por mês ou outro parâmetro
+// Agrupa dados por um parâmetro
 function processarDados(dados, parametro_busca) {
-  const isData = (valor) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor); // Detecta formato de data/hora
-  const contagem = new Map(); // Substitui o objeto por um Map para melhor desempenho
+  const contagem = new Map();
 
   dados.forEach((item) => {
     let chave = item[parametro_busca];
-
-    if (chave) {
-      if (isData(chave)) {
-        const mes = chave.slice(5, 7); // Extrai o mês (MM)
-        chave = cacheMeses[mes]; // Obtém o nome do mês do cache
-      }
-
-      contagem.set(chave, (contagem.get(chave) || 0) + 1); // Incrementa a contagem
+    if (chave && isData(chave)) {
+      const mes = chave.slice(5, 7);
+      chave = cacheMeses[mes];
     }
+    if (chave) contagem.set(chave, (contagem.get(chave) || 0) + 1);
   });
 
   return {
-    labels: Array.from(contagem.keys()), // Extrai as chaves (nomes) como labels
-    valores: Array.from(contagem.values()), // Extrai os valores como contagem
+    labels: Array.from(contagem.keys()),
+    valores: Array.from(contagem.values()),
   };
 }
 
-// Função genérica para criar gráficos
-export function criarGrafico(
-  ctx,
-  tipo,
-  parametro_busca,
-  backgroundColor,
-  chave,
-  obj,
-  callback,
-) {
-  const dadosOriginais = [...obj];
-
-  // Processa os dados para o gráfico
-  const { labels, valores } = processarDados(
-    getDadosAtuais(dadosOriginais),
-    parametro_busca,
-  );
-
-  // Calcula o total inicial
-  let totalInicial = 0;
-  calcularTotal(dadosOriginais, (total) => {
-    totalInicial = total; // Armazena o total inicial
-    if (callback) {
-      callback(total); // Chama o callback com o total inicial
-    }
-  });
-
-  // Cria o gráfico
-  const grafico = new Chart(ctx, {
-    type: tipo,
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: parametro_busca,
-          data: valores,
-          backgroundColor: backgroundColor.slice(0, labels.length),
-          borderWidth: 1,
-        },
-      ],
-    },
-    options: {
-      plugins: {
-        legend: {
-          display: true,
-          labels: {
-            // Exibe as legendas com cores
-            generateLabels: (chart) => {
-              const dataset = chart.data.datasets[0];
-              return chart.data.labels.map((label, i) => ({
-                text: label,
-                fillStyle: dataset.backgroundColor[i],
-                strokeStyle: dataset.borderColor
-                  ? dataset.borderColor[i]
-                  : dataset.backgroundColor[i],
-                hidden: !chart.getDataVisibility(i),
-                index: i,
-              }));
-            },
-          },
-          onClick: (e, legendItem) => {
-            const legendaClicada = grafico.data.labels[legendItem.index];
-            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
-            atualizarTodosOsGraficos();
-
-            // Atualiza o total após interações
-            calcularTotal(dadosOriginais, (total) => {
-              grafico.total = total; // Atualiza o total no gráfico
-              if (callback) {
-                callback(total); // Chama o callback com o novo total
-              }
-            });
-          },
-        },
-      },
-      scales:
-        tipo === 'bar' || tipo === 'line'
-          ? {
-              x: {
-                beginAtZero: true,
-              },
-              y: {
-                beginAtZero: true,
-              },
-            }
-          : undefined,
-    },
-  });
-
-  // Associa o total inicial ao gráfico
-  grafico.total = totalInicial;
-  if (callback) {
-    callback(totalInicial); // Chama o callback com o total inicial
-  }
-
-  // Adiciona o gráfico à lista global
-  todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
-}
-
-// Função para alternar um filtro
+// Adiciona ou remove valor no filtro
 function toggleFiltro(dadosOriginais, parametro, valor) {
-  if (!filtrosAtuais[parametro]) {
-    filtrosAtuais[parametro] = [];
-  }
+  if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
 
   const index = filtrosAtuais[parametro].indexOf(valor);
   if (index === -1) {
-    // Adiciona o valor ao filtro
     filtrosAtuais[parametro].push(valor);
   } else {
-    // Remove o valor do filtro
     filtrosAtuais[parametro].splice(index, 1);
-
-    // Se nenhum valor permanecer para o parâmetro, remove o parâmetro
-    if (filtrosAtuais[parametro].length === 0) {
-      delete filtrosAtuais[parametro];
-    }
+    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
   }
 }
 
-// Função para atualizar todos os gráficos
+// Atualiza todos os gráficos criados
 function atualizarTodosOsGraficos() {
   todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
     const { labels, valores } = processarDados(
@@ -209,22 +91,206 @@ function atualizarTodosOsGraficos() {
   });
 }
 
-// Função para adicionar botões de filtro por meses na interface
+// Função pública para remover todos os filtros
+export function limparFiltros() {
+  filtrosAtuais = {};
+  atualizarTodosOsGraficos();
+}
+
+// Cria gráfico interativo
+export function criarGrafico(
+  ctx,
+  tipo,
+  parametro_busca,
+  backgroundColor,
+  chave,
+  obj,
+  callback,
+) {
+  const dadosOriginais = [...obj];
+  const idCanvas = ctx.id || `grafico-${Date.now()}`;
+
+  const { labels, valores } = processarDados(
+    getDadosAtuais(dadosOriginais),
+    parametro_busca,
+  );
+
+  const totalInicial = calcularTotal(dadosOriginais, callback);
+
+  // Cria um container para o gráfico + seletor
+  const container = document.createElement('div');
+  container.className = 'grafico-container';
+
+  const selectTipos = document.createElement('select');
+  selectTipos.innerHTML = `
+    <option value="bar" ${tipo === 'bar' ? 'selected' : ''}>Barras</option>
+    <option value="line" ${tipo === 'line' ? 'selected' : ''}>Linha</option>
+    <option value="pie" ${tipo === 'pie' ? 'selected' : ''}>Pizza</option>
+    <option value="doughnut" ${
+      tipo === 'doughnut' ? 'selected' : ''
+    }>Rosquinha</option>
+    <option value="radar" ${tipo === 'radar' ? 'selected' : ''}>Radar</option>
+    <option value="polarArea" ${
+      tipo === 'polarArea' ? 'selected' : ''
+    }>Área Polar</option>
+  `;
+  selectTipos.className = 'tipo-grafico-select';
+
+  // Move o canvas para dentro do container visual
+  const canvas = document.getElementById(idCanvas);
+  container.appendChild(selectTipos);
+  container.appendChild(canvas);
+
+  // Renderiza o container no body (ou local desejado)
+  canvas.parentNode.insertBefore(container, canvas);
+
+  // Criação inicial do gráfico
+  let grafico = new Chart(canvas, {
+    type: tipo,
+    data: {
+      labels,
+      datasets: [
+        {
+          label: parametro_busca,
+          data: valores,
+          backgroundColor: backgroundColor.slice(0, labels.length),
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              const valor = context.raw;
+              const total = context.chart.total || 1;
+              const percentual = ((valor / total) * 100).toFixed(1);
+              return `${context.label}: ${valor} (${percentual}%)`;
+            },
+          },
+        },
+        legend: {
+          display: true,
+          labels: {
+            generateLabels: (chart) => {
+              const dataset = chart.data.datasets[0];
+              return chart.data.labels.map((label, i) => ({
+                text: label,
+                fillStyle: dataset.backgroundColor[i],
+                strokeStyle: dataset.backgroundColor[i],
+                hidden: !chart.getDataVisibility(i),
+                index: i,
+              }));
+            },
+          },
+          onClick: (e, legendItem) => {
+            const legendaClicada = grafico.data.labels[legendItem.index];
+            toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+            atualizarTodosOsGraficos();
+            grafico.total = calcularTotal(dadosOriginais, callback);
+          },
+        },
+      },
+      scales:
+        tipo === 'bar' || tipo === 'line'
+          ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+          : undefined,
+    },
+  });
+
+  grafico.total = totalInicial;
+
+  // Adiciona à lista global para reuso
+  todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+
+  // Atualiza o tipo do gráfico dinamicamente
+  selectTipos.addEventListener('change', () => {
+    const novoTipo = selectTipos.value;
+
+    // Remove gráfico anterior
+    grafico.destroy();
+
+    // Recria com novo tipo
+    grafico = new Chart(canvas, {
+      type: novoTipo,
+      data: {
+        labels,
+        datasets: [
+          {
+            label: parametro_busca,
+            data: valores,
+            backgroundColor: backgroundColor.slice(0, labels.length),
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function (context) {
+                const valor = context.raw;
+                const total = context.chart.total || 1;
+                const percentual = ((valor / total) * 100).toFixed(1);
+                return `${context.label}: ${valor} (${percentual}%)`;
+              },
+            },
+          },
+          legend: {
+            display: true,
+            labels: {
+              generateLabels: (chart) => {
+                const dataset = chart.data.datasets[0];
+                return chart.data.labels.map((label, i) => ({
+                  text: label,
+                  fillStyle: dataset.backgroundColor[i],
+                  strokeStyle: dataset.backgroundColor[i],
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                }));
+              },
+            },
+            onClick: (e, legendItem) => {
+              const legendaClicada = grafico.data.labels[legendItem.index];
+              toggleFiltro(dadosOriginais, parametro_busca, legendaClicada);
+              atualizarTodosOsGraficos();
+              grafico.total = calcularTotal(dadosOriginais, callback);
+            },
+          },
+        },
+        scales:
+          novoTipo === 'bar' || novoTipo === 'line'
+            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            : undefined,
+      },
+    });
+
+    grafico.total = calcularTotal(dadosOriginais, callback);
+  });
+}
+
+// Adiciona UI de botões de filtro por mês
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
+  let container = document.getElementById('filtros');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'filtros';
+    container.className = 'filtro-container';
+    document.body.appendChild(container);
+  }
+
   Object.values(cacheMeses).forEach((mes) => {
     const botaoMes = document.createElement('button');
     botaoMes.innerText = mes;
+    botaoMes.className = 'filtro-botao';
     botaoMes.onclick = () => {
       toggleFiltro(dadosOriginais, parametro, mes);
       atualizarTodosOsGraficos();
-
-      // Atualiza o total após interações de filtro
-      calcularTotal(dadosOriginais, (total) => {
-        console.log(
-          `O total de dados filtrados após o clique no botão é: ${total}`,
-        );
-      });
+      calcularTotal(dadosOriginais, (total) =>
+        console.log(`Total filtrado após clique: ${total}`),
+      );
     };
-    document.body.appendChild(botaoMes); // Adiciona o botão ao DOM
+    container.appendChild(botaoMes);
   });
 }
