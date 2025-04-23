@@ -58,7 +58,6 @@ function processarDados(dados, parametro_busca) {
     /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor);
   const contagem = new Map();
 
-  // 1) monta o Map de contagem
   dados.forEach((item) => {
     let chave = item[parametro_busca];
     if (!chave) return;
@@ -69,22 +68,20 @@ function processarDados(dados, parametro_busca) {
     contagem.set(chave, (contagem.get(chave) || 0) + 1);
   });
 
-  // 2) extrai arrays de labels e valores
+  // Monta arrays no ordem de inserção (fallback)
   let labels = Array.from(contagem.keys());
-  let valores = Array.from(contagem.values());
+  let valores = labels.map((l) => contagem.get(l));
 
-  // 3) só para agrupamento por mês: ordena labels cronologicamente
-  //    (usa a ordem definida em cacheMeses)
+  // Se **todos** os labels forem nomes de meses, aí sim ordena cronologicamente
   const ordemMeses = Object.values(cacheMeses);
-  // filtra apenas nomes de meses que aparecem no gráfico
-  const mesesPresentes = ordemMeses.filter((m) => labels.includes(m));
-  labels = mesesPresentes;
-  valores = labels.map((m) => contagem.get(m));
+  const todosSaoMeses = labels.every((l) => ordemMeses.includes(l));
+  if (todosSaoMeses) {
+    labels = ordemMeses.filter((m) => contagem.has(m));
+    valores = labels.map((m) => contagem.get(m));
+  }
 
   return { labels, valores };
 }
-
-// --- Novas funções para comparação entre períodos ---
 
 // Retorna o rótulo do período anterior (mês, ano ou dia)
 function obterPeriodoAnterior(rotuloAtual) {
