@@ -71,22 +71,9 @@ function processarDados(dados, parametro_busca) {
     }
   });
 
-  // Criar um mapa reverso com nome -> número para ordenação
-  const ordemMeses = Object.entries(cacheMeses).reduce((acc, [num, nome]) => {
-    acc[nome] = parseInt(num, 10);
-    return acc;
-  }, {});
-
-  // Ordena os labels com base na posição do mês no ano
-  const labelsOrdenados = Array.from(contagem.keys()).sort(
-    (a, b) => ordemMeses[a] - ordemMeses[b],
-  );
-
-  const valoresOrdenados = labelsOrdenados.map((label) => contagem.get(label));
-
   return {
-    labels: labelsOrdenados,
-    valores: valoresOrdenados,
+    labels: Array.from(contagem.keys()),
+    valores: Array.from(contagem.values()),
   };
 }
 
