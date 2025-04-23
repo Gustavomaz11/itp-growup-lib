@@ -49,7 +49,6 @@ function getDadosAtuais(dadosOriginais) {
         const fim = Date.parse(item[campoFim]);
         if (isNaN(ini) || isNaN(fim) || fim < ini) return false;
         const diffMin = (fim - ini) / 60000;
-        // verifique se diffMin cai em algum bin cujo label esteja em vals
         return vals.some((label) => {
           const bin = binsGlobais().find((b) => b.label === label);
           return bin && diffMin >= bin.min && diffMin < bin.max;
@@ -72,7 +71,22 @@ function calcularTotal(dadosOriginais, callback) {
   return total;
 }
 
-// --- processamento de dados com ordenação condicional ---
+// --- bins globais para duração ---
+
+function binsGlobais() {
+  return [
+    { label: '< 30 minutos', min: 0, max: 30 },
+    { label: '> 30m < 45m', min: 30, max: 45 },
+    { label: '> 45m < 60m', min: 45, max: 60 },
+    { label: '> 1h < 24h', min: 60, max: 1440 },
+    { label: '> 24h < 48h', min: 1440, max: 2880 },
+    { label: '> 48h < 72h', min: 2880, max: 4320 },
+    { label: '> 72h < 5d', min: 4320, max: 7200 },
+    { label: '> 5 dias', min: 7200, max: Infinity },
+  ];
+}
+
+// --- processamento de dados básico (contagem por valor ou mês) ---
 
 function processarDados(dados, parametro_busca) {
   const isDateTime = (v) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v);
@@ -100,22 +114,7 @@ function processarDados(dados, parametro_busca) {
   return { labels, valores };
 }
 
-// --- bins globais para duração ---
-
-function binsGlobais() {
-  return [
-    { label: '< 30 minutos', min: 0, max: 30 },
-    { label: '> 30m < 45m', min: 30, max: 45 },
-    { label: '> 45m < 60m', min: 45, max: 60 },
-    { label: '> 1h < 24h', min: 60, max: 1440 },
-    { label: '> 24h < 48h', min: 1440, max: 2880 },
-    { label: '> 48h < 72h', min: 2880, max: 4320 },
-    { label: '> 72h < 5d', min: 4320, max: 7200 }, // até 5 dias
-    { label: '> 5 dias', min: 7200, max: Infinity },
-  ];
-}
-
-// --- processamento de durações de atendimento em bins com filtro e ocultação de zero ---
+// --- processamento de durações de atendimento em bins ---
 
 function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
   const bins = binsGlobais();
@@ -134,7 +133,6 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
     }
   });
 
-  // aplica filtro de duração, se existir
   const durKey = `${campoInicio}|${campoFim}_duracao`;
   const filtroDur = filtrosAtuais[durKey];
 
@@ -150,18 +148,76 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
   return { labels, valores };
 }
 
+// --- NOVAS MÉTRICAS PARA SÉRIE HISTÓRICA ---
+
+// 1. Série temporal (dia ou mês)
+function calcularSerieTemporal(dados, campoData, periodo = 'dia') {
+  const mapa = new Map();
+  dados.forEach((item) => {
+    if (!item[campoData]) return;
+    let chave;
+    if (periodo === 'mes') {
+      const m = item[campoData].slice(5, 7);
+      chave = cacheMeses[m];
+    } else {
+      chave = item[campoData].slice(0, 10); // YYYY-MM-DD
+    }
+    mapa.set(chave, (mapa.get(chave) || 0) + 1);
+  });
+  let labels = Array.from(mapa.keys()).sort((a, b) => {
+    if (periodo === 'mes') {
+      return ordemMeses.indexOf(a) - ordemMeses.indexOf(b);
+    }
+    return new Date(a) - new Date(b);
+  });
+  const valores = labels.map((l) => mapa.get(l));
+  return { labels, valores };
+}
+
+// 2. Taxa de crescimento percentual
+function calcularTaxaCrescimento(serie) {
+  const { labels, valores } = serie;
+  const growth = valores.map((v, i) =>
+    i === 0 ? 0 : ((v - valores[i - 1]) / valores[i - 1]) * 100,
+  );
+  return { labels, valores: growth };
+}
+
+// 3. Média móvel (janela deslizante)
+function calcularMediaMovel(serie, windowSize = 7) {
+  const { labels, valores } = serie;
+  const movAvg = valores.map((_, i, arr) => {
+    const start = Math.max(0, i - windowSize + 1);
+    const window = arr.slice(start, i + 1);
+    return window.reduce((s, x) => s + x, 0) / window.length;
+  });
+  return { labels, valores: movAvg };
+}
+
+// 4. Cumulativo (soma acumulada)
+function calcularCumulativo(serie) {
+  const { labels, valores } = serie;
+  const cumul = valores.reduce((acc, v, i) => {
+    acc.push((acc[i - 1] || 0) + v);
+    return acc;
+  }, []);
+  return { labels, valores: cumul };
+}
+
 // --- criação e atualização de gráficos ---
 
 /**
  * @param ctx                  contexto do canvas
- * @param tipoInicial          'bar'|'pie'|...
+ * @param tipoInicial          'bar'|'line'|'pie'|...
  * @param parametro_busca      campo de início (data ou outro)
  * @param backgroundColor      array de cores
  * @param chave                rótulo do dataset
  * @param obj                  array de objetos com dados
  * @param callback             função({ total, variacaoTexto })
- * @param porDuracao           true=normal / false=histograma de duração
+ * @param porDuracao           true=contagem normal / false=histograma de duração
  * @param parametro_busca_fim  campo de fim se porDuracao=false
+ * @param metricType           'normal'|'growth'|'movingAverage'|'cumulative'
+ * @param metricOptions        { periodo: 'dia'|'mes', windowSize: número }
  */
 export function criarGrafico(
   ctx,
@@ -173,6 +229,8 @@ export function criarGrafico(
   callback,
   porDuracao = true,
   parametro_busca_fim = null,
+  metricType = 'normal',
+  metricOptions = {},
 ) {
   const dadosOriginais = [...obj];
   let tipoAtual = tipoInicial;
@@ -180,7 +238,7 @@ export function criarGrafico(
 
   function renderizar() {
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    let labels, valores;
+    let serie;
 
     if (porDuracao === false) {
       if (!parametro_busca_fim) {
@@ -188,14 +246,36 @@ export function criarGrafico(
           'parametro_busca_fim obrigatório quando porDuracao=false',
         );
       }
-      ({ labels, valores } = processarDuracaoAtendimentos(
+      serie = processarDuracaoAtendimentos(
         dadosFiltrados,
         parametro_busca,
         parametro_busca_fim,
-      ));
+      );
     } else {
-      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
+      // série bruta por dia ou mês
+      serie = calcularSerieTemporal(
+        dadosFiltrados,
+        parametro_busca,
+        metricOptions.periodo || 'dia',
+      );
     }
+
+    // aplica métrica derivada
+    switch (metricType) {
+      case 'growth':
+        serie = calcularTaxaCrescimento(serie);
+        break;
+      case 'movingAverage':
+        serie = calcularMediaMovel(serie, metricOptions.windowSize || 7);
+        break;
+      case 'cumulative':
+        serie = calcularCumulativo(serie);
+        break;
+      // 'normal': mantém série bruta
+    }
+
+    const { labels, valores } = serie;
+    const labelDataset = metricType === 'growth' ? `${chave} (%)` : chave;
 
     const config = {
       type: tipoAtual,
@@ -203,7 +283,7 @@ export function criarGrafico(
         labels,
         datasets: [
           {
-            label: chave,
+            label: labelDataset,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
             borderWidth: 1,
@@ -212,38 +292,14 @@ export function criarGrafico(
       },
       options: {
         plugins: {
-          legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((lab, i) => ({
-                  text: lab,
-                  fillStyle: ds.backgroundColor[i],
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
-              },
-            },
-            onClick: (_, item) => {
-              const val = grafico.data.labels[item.index];
-              if (porDuracao === false) {
-                // usa chave composta para duração
-                toggleFiltro(
-                  dadosOriginais,
-                  `${parametro_busca}|${parametro_busca_fim}_duracao`,
-                  val,
-                );
-              } else {
-                toggleFiltro(dadosOriginais, parametro_busca, val);
-              }
-              atualizarTodosOsGraficos();
-            },
-          },
+          legend: { display: true },
         },
         scales:
           tipoAtual === 'bar' || tipoAtual === 'line'
-            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            ? {
+                x: { beginAtZero: true },
+                y: { beginAtZero: metricType === 'growth' ? false : true },
+              }
             : undefined,
       },
     };
@@ -255,8 +311,11 @@ export function criarGrafico(
 
     grafico = new Chart(ctx, config);
     calcularTotal(dadosOriginais, (total) => {
-      grafico.total = total;
-      if (callback) callback({ total, variacaoTexto: null });
+      const variacaoTexto =
+        metricType === 'growth'
+          ? `${valores[valores.length - 1].toFixed(1)}%`
+          : null;
+      if (callback) callback({ total, variacaoTexto });
     });
 
     todosOsGraficos.push({
@@ -265,6 +324,8 @@ export function criarGrafico(
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
+      metricType,
+      metricOptions,
     });
   }
 
@@ -306,20 +367,37 @@ function atualizarTodosOsGraficos() {
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
+      metricType,
+      metricOptions,
     } = entry;
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    let labels, valores;
+    let serie;
     if (porDuracao === false) {
-      ({ labels, valores } = processarDuracaoAtendimentos(
+      serie = processarDuracaoAtendimentos(
         dadosFiltrados,
         parametro_busca,
         parametro_busca_fim,
-      ));
+      );
     } else {
-      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
+      serie = calcularSerieTemporal(
+        dadosFiltrados,
+        parametro_busca,
+        metricOptions.periodo || 'dia',
+      );
+      switch (metricType) {
+        case 'growth':
+          serie = calcularTaxaCrescimento(serie);
+          break;
+        case 'movingAverage':
+          serie = calcularMediaMovel(serie, metricOptions.windowSize || 7);
+          break;
+        case 'cumulative':
+          serie = calcularCumulativo(serie);
+          break;
+      }
     }
-    grafico.data.labels = labels;
-    grafico.data.datasets[0].data = valores;
+    grafico.data.labels = serie.labels;
+    grafico.data.datasets[0].data = serie.valores;
     grafico.update();
   });
 }
