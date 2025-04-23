@@ -21,22 +21,28 @@ const cacheMeses = {
 };
 
 function processarDuracoes(dados, parametroInicio, parametroFim) {
+  const MS = 1000;
+  const MIN = 60 * MS;
+  const H = 60 * MIN;
+  const D = 24 * H;
+
   const bins = [
-    { label: '< 30 minutos', test: (diff) => diff < 30 * 60 * 1000 },
-    {
-      label: '> 45min e < 60min',
-      test: (diff) => diff > 45 * 60 * 1000 && diff < 60 * 60 * 1000,
-    },
-    {
-      label: '> 24h e < 48h',
-      test: (diff) => diff > 24 * 60 * 60 * 1000 && diff < 48 * 60 * 60 * 1000,
-    },
-    {
-      label: '> 48h e < 72h',
-      test: (diff) => diff > 48 * 60 * 60 * 1000 && diff < 72 * 60 * 60 * 1000,
-    },
+    { label: '< 15 minutos', test: (d) => d < 15 * MIN },
+    { label: '15–30 minutos', test: (d) => d >= 15 * MIN && d < 30 * MIN },
+    { label: '30–45 minutos', test: (d) => d >= 30 * MIN && d < 45 * MIN },
+    { label: '45–60 minutos', test: (d) => d >= 45 * MIN && d < 60 * MIN },
+    { label: '1–2 horas', test: (d) => d >= 1 * H && d < 2 * H },
+    { label: '2–4 horas', test: (d) => d >= 2 * H && d < 4 * H },
+    { label: '4–8 horas', test: (d) => d >= 4 * H && d < 8 * H },
+    { label: '8–12 horas', test: (d) => d >= 8 * H && d < 12 * H },
+    { label: '12–24 horas', test: (d) => d >= 12 * H && d < 24 * H },
+    { label: '1–2 dias', test: (d) => d >= 1 * D && d < 2 * D },
+    { label: '2–3 dias', test: (d) => d >= 2 * D && d < 3 * D },
+    { label: '3–5 dias', test: (d) => d >= 3 * D && d < 5 * D },
+    { label: '5–7 dias', test: (d) => d >= 5 * D && d < 7 * D },
+    { label: '> 7 dias', test: (d) => d >= 7 * D },
   ];
-  // inicializa contadores em zero
+
   const contadores = bins.map(() => 0);
 
   dados.forEach((item) => {
@@ -192,10 +198,10 @@ export function criarGrafico(
   ctx,
   tipoInicial,
   parametroBuscaInicio,
-  usarDuracao = true, // ← novo parâmetro booleano
-  parametroBuscaFim = null, // ← obrigatório se usarDuracao for false
+  usarDuracao = true,
+  parametroBuscaFim = null,
   backgroundColor,
-  chave,
+  labelDataset,
   obj,
   callback,
 ) {
@@ -205,36 +211,25 @@ export function criarGrafico(
 
   if (!usarDuracao && !parametroBuscaFim) {
     throw new Error(
-      'Parâmetro "parametroBuscaFim" é obrigatório quando usarDuracao for false.',
+      'parametroBuscaFim é obrigatório quando usarDuracao for false',
     );
   }
 
   function renderizarGrafico() {
-    // escolhe entre o processamento por mês (antigo) ou por duração (novo)
-    let processResult;
-    if (!usarDuracao) {
-      processResult = processarDuracoes(
-        dadosOriginais,
-        parametroBuscaInicio,
-        parametroBuscaFim,
-      );
-    } else {
-      processResult = processarDados(
-        getDadosAtuais(dadosOriginais),
-        parametroBuscaInicio,
-      );
-    }
+    // PROCESSAMENTO
+    const base = getDadosAtuais(dadosOriginais);
+    const { labels, valores } = usarDuracao
+      ? processarDados(base, parametroBuscaInicio)
+      : processarDuracoes(base, parametroBuscaInicio, parametroBuscaFim);
 
-    const { labels, valores } = processResult;
+    // CONFIGURAÇÃO
     const config = {
       type: tipoAtual,
       data: {
         labels,
         datasets: [
           {
-            label: usarDuracao
-              ? parametroBuscaInicio
-              : 'Distribuição de Duração',
+            label: usarDuracao ? labelDataset : 'Duração',
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
             borderWidth: 1,
@@ -243,7 +238,19 @@ export function criarGrafico(
       },
       options: {
         plugins: {
-          legend: { display: true },
+          legend: {
+            display: true,
+            onClick: (e, legendItem) => {
+              if (!usarDuracao) {
+                const v = grafico.data.labels[legendItem.index];
+                toggleFiltro(dadosOriginais, parametroBuscaInicio, v);
+                atualizarTodosOsGraficos();
+              } else {
+                grafico.toggleDataVisibility(legendItem.index);
+                grafico.update();
+              }
+            },
+          },
         },
         scales:
           tipoAtual === 'bar' || tipoAtual === 'line'
@@ -252,17 +259,24 @@ export function criarGrafico(
       },
     };
 
-    if (grafico) {
-      grafico.destroy();
-    }
+    // (re)cria o gráfico
+    if (grafico) grafico.destroy();
     grafico = new Chart(ctx, config);
 
-    // callback inicial
+    // notifica callback
     if (callback) callback({ total: labels.length, variacaoTexto: null });
   }
 
-  // primeira renderização
   renderizarGrafico();
+
+  // guarda para atualizações globais
+  todosOsGraficos.push({
+    grafico,
+    dadosOriginais,
+    parametroBuscaInicio,
+    usarDuracao,
+    parametroBuscaFim,
+  });
 
   // select de tipos de gráfico
   const tiposDisponiveis = [
@@ -302,11 +316,20 @@ function toggleFiltro(dadosOriginais, parametro, valor) {
 
 // Função para atualizar todos os gráficos
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
-    const { labels, valores } = processarDados(
-      getDadosAtuais(dadosOriginais),
-      parametro_busca,
-    );
+  todosOsGraficos.forEach((item) => {
+    const {
+      grafico,
+      dadosOriginais,
+      parametroBuscaInicio,
+      usarDuracao,
+      parametroBuscaFim,
+    } = item;
+
+    const base = getDadosAtuais(dadosOriginais);
+    const { labels, valores } = usarDuracao
+      ? processarDados(base, parametroBuscaInicio)
+      : processarDuracoes(base, parametroBuscaInicio, parametroBuscaFim);
+
     grafico.data.labels = labels;
     grafico.data.datasets[0].data = valores;
     grafico.update();
