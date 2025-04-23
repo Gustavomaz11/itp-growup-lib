@@ -20,6 +20,41 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
+function processarDuracoes(dados, parametroInicio, parametroFim) {
+  const bins = [
+    { label: '< 30 minutos', test: (diff) => diff < 30 * 60 * 1000 },
+    {
+      label: '> 45min e < 60min',
+      test: (diff) => diff > 45 * 60 * 1000 && diff < 60 * 60 * 1000,
+    },
+    {
+      label: '> 24h e < 48h',
+      test: (diff) => diff > 24 * 60 * 60 * 1000 && diff < 48 * 60 * 60 * 1000,
+    },
+    {
+      label: '> 48h e < 72h',
+      test: (diff) => diff > 48 * 60 * 60 * 1000 && diff < 72 * 60 * 60 * 1000,
+    },
+  ];
+  // inicializa contadores em zero
+  const contadores = bins.map(() => 0);
+
+  dados.forEach((item) => {
+    const t0 = Date.parse(item[parametroInicio]);
+    const t1 = Date.parse(item[parametroFim]);
+    if (isNaN(t0) || isNaN(t1)) return;
+    const diff = t1 - t0;
+    bins.forEach((bin, i) => {
+      if (bin.test(diff)) contadores[i]++;
+    });
+  });
+
+  return {
+    labels: bins.map((b) => b.label),
+    valores: contadores,
+  };
+}
+
 // Função para obter os dados atuais (considerando filtros ou dados originais)
 function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) {
@@ -156,7 +191,9 @@ function calcularComparacao(dadosOriginais, parametro_busca, valorAtual) {
 export function criarGrafico(
   ctx,
   tipoInicial,
-  parametro_busca,
+  parametroBuscaInicio,
+  usarDuracao = true, // ← novo parâmetro booleano
+  parametroBuscaFim = null, // ← obrigatório se usarDuracao for false
   backgroundColor,
   chave,
   obj,
@@ -166,19 +203,38 @@ export function criarGrafico(
   let tipoAtual = tipoInicial;
   let grafico;
 
-  function renderizarGrafico() {
-    const { labels, valores } = processarDados(
-      getDadosAtuais(dadosOriginais),
-      parametro_busca,
+  if (!usarDuracao && !parametroBuscaFim) {
+    throw new Error(
+      'Parâmetro "parametroBuscaFim" é obrigatório quando usarDuracao for false.',
     );
+  }
 
+  function renderizarGrafico() {
+    // escolhe entre o processamento por mês (antigo) ou por duração (novo)
+    let processResult;
+    if (!usarDuracao) {
+      processResult = processarDuracoes(
+        dadosOriginais,
+        parametroBuscaInicio,
+        parametroBuscaFim,
+      );
+    } else {
+      processResult = processarDados(
+        getDadosAtuais(dadosOriginais),
+        parametroBuscaInicio,
+      );
+    }
+
+    const { labels, valores } = processResult;
     const config = {
       type: tipoAtual,
       data: {
         labels,
         datasets: [
           {
-            label: parametro_busca,
+            label: usarDuracao
+              ? parametroBuscaInicio
+              : 'Distribuição de Duração',
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
             borderWidth: 1,
@@ -187,38 +243,7 @@ export function criarGrafico(
       },
       options: {
         plugins: {
-          legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((label, i) => ({
-                  text: label,
-                  fillStyle: ds.backgroundColor[i],
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
-              },
-            },
-            onClick: (_, legendItem) => {
-              const valor = grafico.data.labels[legendItem.index];
-              toggleFiltro(dadosOriginais, parametro_busca, valor);
-              atualizarTodosOsGraficos();
-
-              if (parametro_busca.includes('data')) {
-                const { total, variacaoTexto } = calcularComparacao(
-                  dadosOriginais,
-                  parametro_busca,
-                  valor,
-                );
-                if (callback) callback({ total, variacaoTexto });
-              } else {
-                calcularTotal(dadosOriginais, (total) => {
-                  if (callback) callback({ total, variacaoTexto: null });
-                });
-              }
-            },
-          },
+          legend: { display: true },
         },
         scales:
           tipoAtual === 'bar' || tipoAtual === 'line'
@@ -228,20 +253,12 @@ export function criarGrafico(
     };
 
     if (grafico) {
-      const idx = todosOsGraficos.findIndex((item) => item.grafico === grafico);
-      if (idx !== -1) todosOsGraficos.splice(idx, 1);
       grafico.destroy();
     }
-
     grafico = new Chart(ctx, config);
 
-    // callback inicial com total geral
-    calcularTotal(dadosOriginais, (total) => {
-      grafico.total = total;
-      if (callback) callback({ total, variacaoTexto: null });
-    });
-
-    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+    // callback inicial
+    if (callback) callback({ total: labels.length, variacaoTexto: null });
   }
 
   // primeira renderização
