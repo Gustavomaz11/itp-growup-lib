@@ -20,32 +20,6 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-function processarDuracoes(dados, parametroInicio, parametroFim) {
-  const bins = [
-    { label: '< 30 minutos',         test: diff => diff <  30 * 60 * 1000 },
-    { label: '> 45min e < 60min',    test: diff => diff >  45 * 60 * 1000 && diff < 60 * 60 * 1000 },
-    { label: '> 24h e < 48h',        test: diff => diff >  24 * 60 * 60 * 1000 && diff < 48 * 60 * 60 * 1000 },
-    { label: '> 48h e < 72h',        test: diff => diff >  48 * 60 * 60 * 1000 && diff < 72 * 60 * 60 * 1000 },
-  ];
-  // inicializa contadores em zero
-  const contadores = bins.map(() => 0);
-
-  dados.forEach(item => {
-    const t0 = Date.parse(item[parametroInicio]);
-    const t1 = Date.parse(item[parametroFim]);
-    if (isNaN(t0) || isNaN(t1)) return; 
-    const diff = t1 - t0;
-    bins.forEach((bin, i) => {
-      if (bin.test(diff)) contadores[i]++;
-    });
-  });
-
-  return {
-    labels: bins.map(b => b.label),
-    valores: contadores
-  };
-}
-
 // Função para obter os dados atuais (considerando filtros ou dados originais)
 function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) {
