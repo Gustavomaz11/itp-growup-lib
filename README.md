@@ -26,15 +26,15 @@ npm i gmt-charts-growup
 
 ### Usando CDN
 ```bash
-<script src="https://cdn.jsdelivr.net/npm/gmt-charts-growup@2.0.2/dist/index.umd.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gmt-charts-growup@2.0.11/dist/index.umd.js" defer></script>
 ```
 
 ## Utilização
-Atualmente, a biblioteca oferece dois tipos de gráficos: **Gráfico de Rosca e de Barra**
+Atualmente, a biblioteca oferece dois tipos de gráficos: **Gráfico de Rosca, Barra, Radar, Area Polar e Linha**
 
 #### Exemplo de Uso
 ```bash
-itp.criarGrafico(ctx, tipo, parametro_busca, backgroundColor, chave, obj)
+itp.criarGrafico(ctx, tipo, parametro_busca, backgroundColor, chave, obj, callback)
 ```
 
 ### Explicação de Parâmetros
