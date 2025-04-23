@@ -58,23 +58,30 @@ function processarDados(dados, parametro_busca) {
     /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(valor);
   const contagem = new Map();
 
+  // 1) monta o Map de contagem
   dados.forEach((item) => {
     let chave = item[parametro_busca];
-
-    if (chave) {
-      if (isDataTime(chave)) {
-        const mes = chave.slice(5, 7);
-        chave = cacheMeses[mes];
-      }
-
-      contagem.set(chave, (contagem.get(chave) || 0) + 1);
+    if (!chave) return;
+    if (isDataTime(chave)) {
+      const mes = chave.slice(5, 7);
+      chave = cacheMeses[mes];
     }
+    contagem.set(chave, (contagem.get(chave) || 0) + 1);
   });
 
-  return {
-    labels: Array.from(contagem.keys()),
-    valores: Array.from(contagem.values()),
-  };
+  // 2) extrai arrays de labels e valores
+  let labels = Array.from(contagem.keys());
+  let valores = Array.from(contagem.values());
+
+  // 3) só para agrupamento por mês: ordena labels cronologicamente
+  //    (usa a ordem definida em cacheMeses)
+  const ordemMeses = Object.values(cacheMeses);
+  // filtra apenas nomes de meses que aparecem no gráfico
+  const mesesPresentes = ordemMeses.filter((m) => labels.includes(m));
+  labels = mesesPresentes;
+  valores = labels.map((m) => contagem.get(m));
+
+  return { labels, valores };
 }
 
 // --- Novas funções para comparação entre períodos ---
