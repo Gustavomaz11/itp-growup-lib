@@ -74,11 +74,9 @@ function processarDados(dados, parametro_busca) {
     contagem.set(chave, (contagem.get(chave) || 0) + 1);
   });
 
-  // fallback: na ordem de inserção
   let labels = Array.from(contagem.keys());
   let valores = labels.map((l) => contagem.get(l));
 
-  // se **todos** os rótulos forem meses, ordena cronologicamente
   const todosSaoMeses = labels.every((l) => ordemMeses.includes(l));
   if (todosSaoMeses) {
     labels = ordemMeses.filter((m) => contagem.has(m));
@@ -91,7 +89,6 @@ function processarDados(dados, parametro_busca) {
 // --- processamento de durações de atendimento em bins ---
 
 function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
-  // definimos os intervalos (em minutos)
   const bins = [
     { label: '< 30 minutos', min: 0, max: 30 },
     { label: '> 30m < 45m', min: 30, max: 45 },
@@ -101,19 +98,15 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
     { label: '> 48h < 72h', min: 2880, max: 4320 },
     { label: '> 72 horas', min: 4320, max: Infinity },
   ];
-
-  // contador para cada bin
   const contagem = bins.map(() => 0);
 
   dados.forEach((item) => {
     const ini = item[campoInicio];
     const fim = item[campoFim];
     if (!ini || !fim) return;
-
-    const t1 = Date.parse(ini);
-    const t2 = Date.parse(fim);
+    const t1 = Date.parse(ini),
+      t2 = Date.parse(fim);
     if (isNaN(t1) || isNaN(t2) || t2 < t1) return;
-
     const diffMin = (t2 - t1) / 60000;
     for (let i = 0; i < bins.length; i++) {
       if (diffMin >= bins[i].min && diffMin < bins[i].max) {
@@ -178,15 +171,15 @@ function calcularComparacao(dadosOriginais, parametro_busca, valorAtual) {
 // --- criação e atualização de gráficos ---
 
 /**
- * @param ctx                contexto do canvas
- * @param tipoInicial        'bar'|'pie'|...
- * @param parametro_busca    campo de início (data ou outro)
- * @param backgroundColor    array de cores
- * @param chave              rótulo para o dataset (só altere se quiser)
- * @param obj                array de objetos com dados
- * @param callback           função(total, variacaoTexto)
- * @param porDuracao         se false => desenha histograma de durações
- * @param parametro_busca_fim campo de fim (exigido se porDuracao=false)
+ * @param ctx                 contexto do canvas
+ * @param tipoInicial         'bar'|'pie'|...
+ * @param parametro_busca     campo de início (data ou outro)
+ * @param backgroundColor     array de cores
+ * @param chave               rótulo do dataset
+ * @param obj                 array de objetos com dados
+ * @param callback            função({ total, variacaoTexto })
+ * @param porDuracao          true=normal / false=histograma de duração
+ * @param parametro_busca_fim campo de fim se porDuracao=false
  */
 export function criarGrafico(
   ctx,
@@ -204,11 +197,9 @@ export function criarGrafico(
   let grafico;
 
   function renderizar() {
-    // obtém dados já filtrados
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
-
-    // escolhe modo normal ou durações
     let labels, valores;
+
     if (porDuracao === false) {
       if (!parametro_busca_fim) {
         throw new Error(
@@ -256,7 +247,6 @@ export function criarGrafico(
               const val = grafico.data.labels[item.index];
               toggleFiltro(dadosOriginais, parametro_busca, val);
               atualizarTodosOsGraficos();
-
               if (parametro_busca.includes('data')) {
                 const cmp = calcularComparacao(
                   dadosOriginais,
@@ -281,7 +271,7 @@ export function criarGrafico(
 
     if (grafico) {
       grafico.destroy();
-      todosOsGraficos = todosOsGraficos.filter((i) => i.grafico !== grafico);
+      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
     }
 
     grafico = new Chart(ctx, config);
@@ -289,7 +279,15 @@ export function criarGrafico(
       grafico.total = total;
       if (callback) callback({ total, variacaoTexto: null });
     });
-    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+
+    // armazenamos também porDuracao e parametro_busca_fim
+    todosOsGraficos.push({
+      grafico,
+      dadosOriginais,
+      parametro_busca,
+      porDuracao,
+      parametro_busca_fim,
+    });
   }
 
   renderizar();
@@ -323,13 +321,18 @@ function toggleFiltro(dadosOriginais, parametro, valor) {
 }
 
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
+  todosOsGraficos.forEach((entry) => {
+    const {
+      grafico,
+      dadosOriginais,
+      parametro_busca,
+      porDuracao,
+      parametro_busca_fim,
+    } = entry;
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
-    // mantém mesmo comportamento de criação
-    if (grafico.config.data.datasets[0].label === chave && !porDuracao) {
-      // caso específico de duração, você pode ajustar aqui se necessário
+    if (porDuracao === false) {
       ({ labels, valores } = processarDuracaoAtendimentos(
         dadosFiltrados,
         parametro_busca,
