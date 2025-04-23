@@ -22,27 +22,18 @@ const cacheMeses = {
 
 function processarDuracoes(dados, parametroInicio, parametroFim) {
   const bins = [
-    { label: '< 30 minutos', test: (diff) => diff < 30 * 60 * 1000 },
-    {
-      label: '> 45min e < 60min',
-      test: (diff) => diff > 45 * 60 * 1000 && diff < 60 * 60 * 1000,
-    },
-    {
-      label: '> 24h e < 48h',
-      test: (diff) => diff > 24 * 60 * 60 * 1000 && diff < 48 * 60 * 60 * 1000,
-    },
-    {
-      label: '> 48h e < 72h',
-      test: (diff) => diff > 48 * 60 * 60 * 1000 && diff < 72 * 60 * 60 * 1000,
-    },
+    { label: '< 30 minutos',         test: diff => diff <  30 * 60 * 1000 },
+    { label: '> 45min e < 60min',    test: diff => diff >  45 * 60 * 1000 && diff < 60 * 60 * 1000 },
+    { label: '> 24h e < 48h',        test: diff => diff >  24 * 60 * 60 * 1000 && diff < 48 * 60 * 60 * 1000 },
+    { label: '> 48h e < 72h',        test: diff => diff >  48 * 60 * 60 * 1000 && diff < 72 * 60 * 60 * 1000 },
   ];
   // inicializa contadores em zero
   const contadores = bins.map(() => 0);
 
-  dados.forEach((item) => {
+  dados.forEach(item => {
     const t0 = Date.parse(item[parametroInicio]);
     const t1 = Date.parse(item[parametroFim]);
-    if (isNaN(t0) || isNaN(t1)) return;
+    if (isNaN(t0) || isNaN(t1)) return; 
     const diff = t1 - t0;
     bins.forEach((bin, i) => {
       if (bin.test(diff)) contadores[i]++;
@@ -50,8 +41,8 @@ function processarDuracoes(dados, parametroInicio, parametroFim) {
   });
 
   return {
-    labels: bins.map((b) => b.label),
-    valores: contadores,
+    labels: bins.map(b => b.label),
+    valores: contadores
   };
 }
 
@@ -192,8 +183,8 @@ export function criarGrafico(
   ctx,
   tipoInicial,
   parametroBuscaInicio,
-  usarDuracao = true, // ← novo parâmetro booleano
-  parametroBuscaFim = null, // ← obrigatório se usarDuracao for false
+  usarDuracao = true,        // ← novo parâmetro booleano
+  parametroBuscaFim = null,  // ← obrigatório se usarDuracao for false
   backgroundColor,
   chave,
   obj,
@@ -205,7 +196,7 @@ export function criarGrafico(
 
   if (!usarDuracao && !parametroBuscaFim) {
     throw new Error(
-      'Parâmetro "parametroBuscaFim" é obrigatório quando usarDuracao for false.',
+      'Parâmetro "parametroBuscaFim" é obrigatório quando usarDuracao for false.'
     );
   }
 
@@ -216,12 +207,12 @@ export function criarGrafico(
       processResult = processarDuracoes(
         dadosOriginais,
         parametroBuscaInicio,
-        parametroBuscaFim,
+        parametroBuscaFim
       );
     } else {
       processResult = processarDados(
         getDadosAtuais(dadosOriginais),
-        parametroBuscaInicio,
+        parametroBuscaInicio
       );
     }
 
@@ -230,26 +221,23 @@ export function criarGrafico(
       type: tipoAtual,
       data: {
         labels,
-        datasets: [
-          {
-            label: usarDuracao
-              ? parametroBuscaInicio
-              : 'Distribuição de Duração',
-            data: valores,
-            backgroundColor: backgroundColor.slice(0, labels.length),
-            borderWidth: 1,
-          },
-        ],
+        datasets: [{
+          label: usarDuracao 
+            ? parametroBuscaInicio 
+            : 'Distribuição de Duração',
+          data: valores,
+          backgroundColor: backgroundColor.slice(0, labels.length),
+          borderWidth: 1
+        }]
       },
       options: {
         plugins: {
-          legend: { display: true },
+          legend: { display: true }
         },
-        scales:
-          tipoAtual === 'bar' || tipoAtual === 'line'
-            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-            : undefined,
-      },
+        scales: (tipoAtual === 'bar' || tipoAtual === 'line')
+          ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+          : undefined
+      }
     };
 
     if (grafico) {
@@ -302,20 +290,11 @@ function toggleFiltro(dadosOriginais, parametro, valor) {
 
 // Função para atualizar todos os gráficos
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach((item) => {
-    const {
-      grafico,
-      dadosOriginais,
-      parametroBuscaInicio,
-      usarDuracao,
-      parametroBuscaFim
-    } = item;
-
-    const base = getDadosAtuais(dadosOriginais);
-    const { labels, valores } = usarDuracao
-      ? processarDados(base, parametroBuscaInicio)
-      : processarDuracoes(base, parametroBuscaInicio, parametroBuscaFim);
-
+  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
+    const { labels, valores } = processarDados(
+      getDadosAtuais(dadosOriginais),
+      parametro_busca,
+    );
     grafico.data.labels = labels;
     grafico.data.datasets[0].data = valores;
     grafico.update();
