@@ -71,9 +71,17 @@ function processarDados(dados, parametro_busca) {
     }
   });
 
+  // Ordenar os labels conforme a ordem dos meses no cache
+  const ordemMeses = Object.values(cacheMeses);
+  const labelsOrdenados = Array.from(contagem.keys()).sort(
+    (a, b) => ordemMeses.indexOf(a) - ordemMeses.indexOf(b),
+  );
+
+  const valoresOrdenados = labelsOrdenados.map((label) => contagem.get(label));
+
   return {
-    labels: Array.from(contagem.keys()),
-    valores: Array.from(contagem.values()),
+    labels: labelsOrdenados,
+    valores: valoresOrdenados,
   };
 }
 
