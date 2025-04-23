@@ -182,9 +182,7 @@ function calcularComparacao(dadosOriginais, parametro_busca, valorAtual) {
 export function criarGrafico(
   ctx,
   tipoInicial,
-  parametroBuscaInicio,
-  usarDuracao = true,        // ← novo parâmetro booleano
-  parametroBuscaFim = null,  // ← obrigatório se usarDuracao for false
+  parametro_busca,
   backgroundColor,
   chave,
   obj,
@@ -194,59 +192,82 @@ export function criarGrafico(
   let tipoAtual = tipoInicial;
   let grafico;
 
-  if (!usarDuracao && !parametroBuscaFim) {
-    throw new Error(
-      'Parâmetro "parametroBuscaFim" é obrigatório quando usarDuracao for false.'
-    );
-  }
-
   function renderizarGrafico() {
-    // escolhe entre o processamento por mês (antigo) ou por duração (novo)
-    let processResult;
-    if (!usarDuracao) {
-      processResult = processarDuracoes(
-        dadosOriginais,
-        parametroBuscaInicio,
-        parametroBuscaFim
-      );
-    } else {
-      processResult = processarDados(
-        getDadosAtuais(dadosOriginais),
-        parametroBuscaInicio
-      );
-    }
+    const { labels, valores } = processarDados(
+      getDadosAtuais(dadosOriginais),
+      parametro_busca,
+    );
 
-    const { labels, valores } = processResult;
     const config = {
       type: tipoAtual,
       data: {
         labels,
-        datasets: [{
-          label: usarDuracao 
-            ? parametroBuscaInicio 
-            : 'Distribuição de Duração',
-          data: valores,
-          backgroundColor: backgroundColor.slice(0, labels.length),
-          borderWidth: 1
-        }]
+        datasets: [
+          {
+            label: parametro_busca,
+            data: valores,
+            backgroundColor: backgroundColor.slice(0, labels.length),
+            borderWidth: 1,
+          },
+        ],
       },
       options: {
         plugins: {
-          legend: { display: true }
+          legend: {
+            display: true,
+            labels: {
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0];
+                return chart.data.labels.map((label, i) => ({
+                  text: label,
+                  fillStyle: ds.backgroundColor[i],
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                }));
+              },
+            },
+            onClick: (_, legendItem) => {
+              const valor = grafico.data.labels[legendItem.index];
+              toggleFiltro(dadosOriginais, parametro_busca, valor);
+              atualizarTodosOsGraficos();
+
+              if (parametro_busca.includes('data')) {
+                const { total, variacaoTexto } = calcularComparacao(
+                  dadosOriginais,
+                  parametro_busca,
+                  valor,
+                );
+                if (callback) callback({ total, variacaoTexto });
+              } else {
+                calcularTotal(dadosOriginais, (total) => {
+                  if (callback) callback({ total, variacaoTexto: null });
+                });
+              }
+            },
+          },
         },
-        scales: (tipoAtual === 'bar' || tipoAtual === 'line')
-          ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-          : undefined
-      }
+        scales:
+          tipoAtual === 'bar' || tipoAtual === 'line'
+            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            : undefined,
+      },
     };
 
     if (grafico) {
+      const idx = todosOsGraficos.findIndex((item) => item.grafico === grafico);
+      if (idx !== -1) todosOsGraficos.splice(idx, 1);
       grafico.destroy();
     }
+
     grafico = new Chart(ctx, config);
 
-    // callback inicial
-    if (callback) callback({ total: labels.length, variacaoTexto: null });
+    // callback inicial com total geral
+    calcularTotal(dadosOriginais, (total) => {
+      grafico.total = total;
+      if (callback) callback({ total, variacaoTexto: null });
+    });
+
+    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
   }
 
   // primeira renderização
