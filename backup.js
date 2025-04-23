@@ -74,11 +74,9 @@ function processarDados(dados, parametro_busca) {
     contagem.set(chave, (contagem.get(chave) || 0) + 1);
   });
 
-  // fallback: na ordem de inserção
   let labels = Array.from(contagem.keys());
   let valores = labels.map((l) => contagem.get(l));
 
-  // se **todos** os rótulos forem meses, ordena cronologicamente
   const todosSaoMeses = labels.every((l) => ordemMeses.includes(l));
   if (todosSaoMeses) {
     labels = ordemMeses.filter((m) => contagem.has(m));
@@ -88,12 +86,46 @@ function processarDados(dados, parametro_busca) {
   return { labels, valores };
 }
 
+// --- processamento de durações de atendimento em bins ---
+
+function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
+  const bins = [
+    { label: '< 30 minutos', min: 0, max: 30 },
+    { label: '> 30m < 45m', min: 30, max: 45 },
+    { label: '> 45m < 60m', min: 45, max: 60 },
+    { label: '> 1h < 24h', min: 60, max: 1440 },
+    { label: '> 24h < 48h', min: 1440, max: 2880 },
+    { label: '> 48h < 72h', min: 2880, max: 4320 },
+    { label: '> 72 horas', min: 4320, max: Infinity },
+  ];
+  const contagem = bins.map(() => 0);
+
+  dados.forEach((item) => {
+    const ini = item[campoInicio];
+    const fim = item[campoFim];
+    if (!ini || !fim) return;
+    const t1 = Date.parse(ini),
+      t2 = Date.parse(fim);
+    if (isNaN(t1) || isNaN(t2) || t2 < t1) return;
+    const diffMin = (t2 - t1) / 60000;
+    for (let i = 0; i < bins.length; i++) {
+      if (diffMin >= bins[i].min && diffMin < bins[i].max) {
+        contagem[i]++;
+        break;
+      }
+    }
+  });
+
+  const labels = bins.map((b) => b.label);
+  const valores = contagem;
+  return { labels, valores };
+}
+
 // --- comparação entre períodos ---
 
 function obterPeriodoAnterior(rotuloAtual) {
   const idx = ordemMeses.indexOf(rotuloAtual);
   if (idx !== -1) {
-    // mês anterior em ciclo
     return ordemMeses[(idx + ordemMeses.length - 1) % ordemMeses.length];
   }
   if (/^\d{4}$/.test(rotuloAtual)) {
@@ -120,10 +152,10 @@ function calcularComparacao(dadosOriginais, parametro_busca, valorAtual) {
   filtrosAtuais[parametro_busca] = [valorAtual];
   const totalAtual = getDadosAtuais(dadosOriginais).length;
 
-  const anterior = obterPeriodoAnterior(valorAtual);
+  const ante = obterPeriodoAnterior(valorAtual);
   let totalAnterior = null;
-  if (anterior) {
-    filtrosAtuais[parametro_busca] = [anterior];
+  if (ante) {
+    filtrosAtuais[parametro_busca] = [ante];
     totalAnterior = getDadosAtuais(dadosOriginais).length;
   }
 
@@ -138,6 +170,17 @@ function calcularComparacao(dadosOriginais, parametro_busca, valorAtual) {
 
 // --- criação e atualização de gráficos ---
 
+/**
+ * @param ctx                 contexto do canvas
+ * @param tipoInicial         'bar'|'pie'|...
+ * @param parametro_busca     campo de início (data ou outro)
+ * @param backgroundColor     array de cores
+ * @param chave               rótulo do dataset
+ * @param obj                 array de objetos com dados
+ * @param callback            função({ total, variacaoTexto })
+ * @param porDuracao          true=normal / false=histograma de duração
+ * @param parametro_busca_fim campo de fim se porDuracao=false
+ */
 export function criarGrafico(
   ctx,
   tipoInicial,
@@ -146,16 +189,31 @@ export function criarGrafico(
   chave,
   obj,
   callback,
+  porDuracao = true,
+  parametro_busca_fim = null,
 ) {
   const dadosOriginais = [...obj];
   let tipoAtual = tipoInicial;
   let grafico;
 
   function renderizar() {
-    const { labels, valores } = processarDados(
-      getDadosAtuais(dadosOriginais),
-      parametro_busca,
-    );
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    let labels, valores;
+
+    if (porDuracao === false) {
+      if (!parametro_busca_fim) {
+        throw new Error(
+          'Quando porDuracao=false, é obrigatório informar parametro_busca_fim',
+        );
+      }
+      ({ labels, valores } = processarDuracaoAtendimentos(
+        dadosFiltrados,
+        parametro_busca,
+        parametro_busca_fim,
+      ));
+    } else {
+      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
+    }
 
     const config = {
       type: tipoAtual,
@@ -163,7 +221,7 @@ export function criarGrafico(
         labels,
         datasets: [
           {
-            label: parametro_busca,
+            label: chave,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
             borderWidth: 1,
@@ -189,7 +247,6 @@ export function criarGrafico(
               const val = grafico.data.labels[item.index];
               toggleFiltro(dadosOriginais, parametro_busca, val);
               atualizarTodosOsGraficos();
-
               if (parametro_busca.includes('data')) {
                 const cmp = calcularComparacao(
                   dadosOriginais,
@@ -214,7 +271,7 @@ export function criarGrafico(
 
     if (grafico) {
       grafico.destroy();
-      todosOsGraficos = todosOsGraficos.filter((i) => i.grafico !== grafico);
+      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
     }
 
     grafico = new Chart(ctx, config);
@@ -222,12 +279,20 @@ export function criarGrafico(
       grafico.total = total;
       if (callback) callback({ total, variacaoTexto: null });
     });
-    todosOsGraficos.push({ grafico, dadosOriginais, parametro_busca });
+
+    // armazenamos também porDuracao e parametro_busca_fim
+    todosOsGraficos.push({
+      grafico,
+      dadosOriginais,
+      parametro_busca,
+      porDuracao,
+      parametro_busca_fim,
+    });
   }
 
   renderizar();
 
-  // seletor de tipo
+  // seletor de tipo de gráfico
   const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
   const sel = document.createElement('select');
   sel.style.margin = '8px';
@@ -256,11 +321,27 @@ function toggleFiltro(dadosOriginais, parametro, valor) {
 }
 
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach(({ grafico, dadosOriginais, parametro_busca }) => {
-    const { labels, valores } = processarDados(
-      getDadosAtuais(dadosOriginais),
+  todosOsGraficos.forEach((entry) => {
+    const {
+      grafico,
+      dadosOriginais,
       parametro_busca,
-    );
+      porDuracao,
+      parametro_busca_fim,
+    } = entry;
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    let labels, valores;
+
+    if (porDuracao === false) {
+      ({ labels, valores } = processarDuracaoAtendimentos(
+        dadosFiltrados,
+        parametro_busca,
+        parametro_busca_fim,
+      ));
+    } else {
+      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
+    }
+
     grafico.data.labels = labels;
     grafico.data.datasets[0].data = valores;
     grafico.update();

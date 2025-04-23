@@ -1,7 +1,7 @@
 import Chart from 'chart.js/auto';
 
 // Variáveis globais
-var filtrosAtuais = {}; // Objeto para armazenar os filtros ativos
+var filtrosAtuais = {}; // Objeto para armazenar filtros gerais e de duração
 var todosOsGraficos = []; // Lista de gráficos
 
 // Ordem fixa de meses para garantir Janeiro→Dezembro
@@ -42,6 +42,20 @@ function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
   return dadosOriginais.filter((item) =>
     Object.entries(filtrosAtuais).every(([param, vals]) => {
+      // filtro de duração
+      if (param.endsWith('_duracao')) {
+        const [campoInicio, campoFim] = param.split('_duracao')[0].split('|');
+        const ini = Date.parse(item[campoInicio]);
+        const fim = Date.parse(item[campoFim]);
+        if (isNaN(ini) || isNaN(fim) || fim < ini) return false;
+        const diffMin = (fim - ini) / 60000;
+        // verifique se diffMin cai em algum bin cujo label esteja em vals
+        return vals.some((label) => {
+          const bin = binsGlobais().find((b) => b.label === label);
+          return bin && diffMin >= bin.min && diffMin < bin.max;
+        });
+      }
+      // filtro normal (inclui data)
       let v = item[param];
       if (param.includes('data') && v) {
         const m = v.slice(5, 7);
@@ -86,28 +100,32 @@ function processarDados(dados, parametro_busca) {
   return { labels, valores };
 }
 
-// --- processamento de durações de atendimento em bins ---
+// --- bins globais para duração ---
 
-function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
-  const bins = [
+function binsGlobais() {
+  return [
     { label: '< 30 minutos', min: 0, max: 30 },
     { label: '> 30m < 45m', min: 30, max: 45 },
     { label: '> 45m < 60m', min: 45, max: 60 },
     { label: '> 1h < 24h', min: 60, max: 1440 },
     { label: '> 24h < 48h', min: 1440, max: 2880 },
     { label: '> 48h < 72h', min: 2880, max: 4320 },
-    { label: '> 72 horas', min: 4320, max: Infinity },
+    { label: '> 72h < 5d', min: 4320, max: 7200 }, // até 5 dias
+    { label: '> 5 dias', min: 7200, max: Infinity },
   ];
+}
+
+// --- processamento de durações de atendimento em bins com filtro e ocultação de zero ---
+
+function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
+  const bins = binsGlobais();
   const contagem = bins.map(() => 0);
 
   dados.forEach((item) => {
-    const ini = item[campoInicio];
-    const fim = item[campoFim];
-    if (!ini || !fim) return;
-    const t1 = Date.parse(ini),
-      t2 = Date.parse(fim);
-    if (isNaN(t1) || isNaN(t2) || t2 < t1) return;
-    const diffMin = (t2 - t1) / 60000;
+    const ini = Date.parse(item[campoInicio]);
+    const fim = Date.parse(item[campoFim]);
+    if (isNaN(ini) || isNaN(fim) || fim < ini) return;
+    const diffMin = (fim - ini) / 60000;
     for (let i = 0; i < bins.length; i++) {
       if (diffMin >= bins[i].min && diffMin < bins[i].max) {
         contagem[i]++;
@@ -116,70 +134,34 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
     }
   });
 
-  const labels = bins.map((b) => b.label);
-  const valores = contagem;
+  // aplica filtro de duração, se existir
+  const durKey = `${campoInicio}|${campoFim}_duracao`;
+  const filtroDur = filtrosAtuais[durKey];
+
+  const labels = [],
+    valores = [];
+  bins.forEach((b, i) => {
+    if (contagem[i] > 0 && (!filtroDur || filtroDur.includes(b.label))) {
+      labels.push(b.label);
+      valores.push(contagem[i]);
+    }
+  });
+
   return { labels, valores };
-}
-
-// --- comparação entre períodos ---
-
-function obterPeriodoAnterior(rotuloAtual) {
-  const idx = ordemMeses.indexOf(rotuloAtual);
-  if (idx !== -1) {
-    return ordemMeses[(idx + ordemMeses.length - 1) % ordemMeses.length];
-  }
-  if (/^\d{4}$/.test(rotuloAtual)) {
-    return String(Number(rotuloAtual) - 1);
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(rotuloAtual)) {
-    const d = new Date(rotuloAtual);
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }
-  return null;
-}
-
-function formatarVariacao(p) {
-  if (p == null) return '—';
-  if (p > 0) return `${p.toFixed(1)}% a mais`;
-  if (p < 0) return `${Math.abs(p).toFixed(1)}% a menos`;
-  return '0% (sem variação)';
-}
-
-function calcularComparacao(dadosOriginais, parametro_busca, valorAtual) {
-  const backup = { ...filtrosAtuais };
-
-  filtrosAtuais[parametro_busca] = [valorAtual];
-  const totalAtual = getDadosAtuais(dadosOriginais).length;
-
-  const ante = obterPeriodoAnterior(valorAtual);
-  let totalAnterior = null;
-  if (ante) {
-    filtrosAtuais[parametro_busca] = [ante];
-    totalAnterior = getDadosAtuais(dadosOriginais).length;
-  }
-
-  filtrosAtuais = backup;
-
-  let perc = null;
-  if (totalAnterior > 0) {
-    perc = ((totalAtual - totalAnterior) / totalAnterior) * 100;
-  }
-  return { total: totalAtual, variacaoTexto: formatarVariacao(perc) };
 }
 
 // --- criação e atualização de gráficos ---
 
 /**
- * @param ctx                 contexto do canvas
- * @param tipoInicial         'bar'|'pie'|...
- * @param parametro_busca     campo de início (data ou outro)
- * @param backgroundColor     array de cores
- * @param chave               rótulo do dataset
- * @param obj                 array de objetos com dados
- * @param callback            função({ total, variacaoTexto })
- * @param porDuracao          true=normal / false=histograma de duração
- * @param parametro_busca_fim campo de fim se porDuracao=false
+ * @param ctx                  contexto do canvas
+ * @param tipoInicial          'bar'|'pie'|...
+ * @param parametro_busca      campo de início (data ou outro)
+ * @param backgroundColor      array de cores
+ * @param chave                rótulo do dataset
+ * @param obj                  array de objetos com dados
+ * @param callback             função({ total, variacaoTexto })
+ * @param porDuracao           true=normal / false=histograma de duração
+ * @param parametro_busca_fim  campo de fim se porDuracao=false
  */
 export function criarGrafico(
   ctx,
@@ -203,7 +185,7 @@ export function criarGrafico(
     if (porDuracao === false) {
       if (!parametro_busca_fim) {
         throw new Error(
-          'Quando porDuracao=false, é obrigatório informar parametro_busca_fim',
+          'parametro_busca_fim obrigatório quando porDuracao=false',
         );
       }
       ({ labels, valores } = processarDuracaoAtendimentos(
@@ -245,20 +227,17 @@ export function criarGrafico(
             },
             onClick: (_, item) => {
               const val = grafico.data.labels[item.index];
-              toggleFiltro(dadosOriginais, parametro_busca, val);
-              atualizarTodosOsGraficos();
-              if (parametro_busca.includes('data')) {
-                const cmp = calcularComparacao(
+              if (porDuracao === false) {
+                // usa chave composta para duração
+                toggleFiltro(
                   dadosOriginais,
-                  parametro_busca,
+                  `${parametro_busca}|${parametro_busca_fim}_duracao`,
                   val,
                 );
-                if (callback) callback(cmp);
               } else {
-                calcularTotal(dadosOriginais, (total) => {
-                  if (callback) callback({ total, variacaoTexto: null });
-                });
+                toggleFiltro(dadosOriginais, parametro_busca, val);
               }
+              atualizarTodosOsGraficos();
             },
           },
         },
@@ -280,7 +259,6 @@ export function criarGrafico(
       if (callback) callback({ total, variacaoTexto: null });
     });
 
-    // armazenamos também porDuracao e parametro_busca_fim
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
@@ -292,7 +270,7 @@ export function criarGrafico(
 
   renderizar();
 
-  // seletor de tipo de gráfico
+  // seletor de tipo
   const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
   const sel = document.createElement('select');
   sel.style.margin = '8px';
@@ -331,7 +309,6 @@ function atualizarTodosOsGraficos() {
     } = entry;
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
-
     if (porDuracao === false) {
       ({ labels, valores } = processarDuracaoAtendimentos(
         dadosFiltrados,
@@ -341,15 +318,13 @@ function atualizarTodosOsGraficos() {
     } else {
       ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
     }
-
     grafico.data.labels = labels;
     grafico.data.datasets[0].data = valores;
     grafico.update();
   });
 }
 
-// --- filtros de mês na interface ---
-
+// Se precisar de botões de mês na interface, mantém igual
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   ordemMeses.forEach((mes) => {
     const btn = document.createElement('button');
@@ -357,9 +332,6 @@ export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
     btn.onclick = () => {
       toggleFiltro(dadosOriginais, parametro, mes);
       atualizarTodosOsGraficos();
-      calcularTotal(dadosOriginais, (total) =>
-        console.log(`Total após filtro: ${total}`),
-      );
     };
     document.body.appendChild(btn);
   });
