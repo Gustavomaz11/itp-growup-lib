@@ -39,30 +39,16 @@ const cacheMeses = {
 // --- funções de filtro e totalização ---
 
 function getDadosAtuais(dadosOriginais) {
-  if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
-  return dadosOriginais.filter((item) =>
-    Object.entries(filtrosAtuais).every(([param, vals]) => {
-      // filtro de duração
-      if (param.endsWith('_duracao')) {
-        const [campoInicio, campoFim] = param.split('_duracao')[0].split('|');
-        const ini = Date.parse(item[campoInicio]);
-        const fim = Date.parse(item[campoFim]);
-        if (isNaN(ini) || isNaN(fim) || fim < ini) return false;
-        const diffMin = (fim - ini) / 60000;
-        // verifique se diffMin cai em algum bin cujo label esteja em vals
-        return vals.some((label) => {
-          const bin = binsGlobais().find((b) => b.label === label);
-          return bin && diffMin >= bin.min && diffMin < bin.max;
-        });
-      }
-      // filtro normal (inclui data)
-      let v = item[param];
-      if (param.includes('data') && v) {
-        const m = v.slice(5, 7);
-        v = cacheMeses[m];
-      }
-      return vals.includes(v);
-    }),
+  return dadosOriginais.filter(
+    (item) =>
+      !Object.entries(filtrosAtuais).some(([param, vals]) => {
+        let v = item[param];
+        if (v && /^\\d{4}-\\d{2}-\\d{2} /.test(v)) {
+          const m = v.slice(5, 7);
+          v = cacheMeses[m];
+        }
+        return !vals.includes(v);
+      }),
   );
 }
 
@@ -72,10 +58,11 @@ function calcularTotal(dadosOriginais, callback) {
   return total;
 }
 
-// --- processamento de dados com ordenação condicional ---
+// --- processamento de dados condicional ---
 
 function processarDados(dados, parametro_busca) {
-  const isDateTime = (v) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v);
+  const isDateTime = (v) =>
+    /^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(v);
   const contagem = new Map();
 
   dados.forEach((item) => {
@@ -88,34 +75,24 @@ function processarDados(dados, parametro_busca) {
     contagem.set(chave, (contagem.get(chave) || 0) + 1);
   });
 
-  let labels = Array.from(contagem.keys());
-  let valores = labels.map((l) => contagem.get(l));
-
-  const todosSaoMeses = labels.every((l) => ordemMeses.includes(l));
-  if (todosSaoMeses) {
-    labels = ordemMeses.filter((m) => contagem.has(m));
-    valores = labels.map((m) => contagem.get(m));
+  const labels = [];
+  const valores = [];
+  for (let [k, v] of contagem.entries()) {
+    labels.push(k);
+    valores.push(v);
   }
 
   return { labels, valores };
 }
 
-// --- bins globais para duração ---
-
 function binsGlobais() {
   return [
-    { label: '< 30 minutos', min: 0, max: 30 },
-    { label: '> 30m < 45m', min: 30, max: 45 },
-    { label: '> 45m < 60m', min: 45, max: 60 },
-    { label: '> 1h < 24h', min: 60, max: 1440 },
-    { label: '> 24h < 48h', min: 1440, max: 2880 },
-    { label: '> 48h < 72h', min: 2880, max: 4320 },
-    { label: '> 72h < 5d', min: 4320, max: 7200 }, // até 5 dias
-    { label: '> 5 dias', min: 7200, max: Infinity },
+    { label: '< 30 min', min: 0, max: 30 },
+    { label: '30–45 min', min: 30, max: 45 },
+    { label: '45–60 min', min: 45, max: 60 },
+    { label: '> 60 min', min: 60, max: Infinity },
   ];
 }
-
-// --- processamento de durações de atendimento em bins com filtro e ocultação de zero ---
 
 function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
   const bins = binsGlobais();
@@ -134,12 +111,10 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
     }
   });
 
-  // aplica filtro de duração, se existir
   const durKey = `${campoInicio}|${campoFim}_duracao`;
   const filtroDur = filtrosAtuais[durKey];
-
-  const labels = [],
-    valores = [];
+  const labels = [];
+  const valores = [];
   bins.forEach((b, i) => {
     if (contagem[i] > 0 && (!filtroDur || filtroDur.includes(b.label))) {
       labels.push(b.label);
@@ -152,17 +127,6 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
 
 // --- criação e atualização de gráficos ---
 
-/**
- * @param ctx                  contexto do canvas
- * @param tipoInicial          'bar'|'pie'|...
- * @param parametro_busca      campo de início (data ou outro)
- * @param backgroundColor      array de cores
- * @param chave                rótulo do dataset
- * @param obj                  array de objetos com dados
- * @param callback             função({ total, variacaoTexto })
- * @param porDuracao           true=normal / false=histograma de duração
- * @param parametro_busca_fim  campo de fim se porDuracao=false
- */
 export function criarGrafico(
   ctx,
   tipoInicial,
@@ -183,11 +147,6 @@ export function criarGrafico(
     let labels, valores;
 
     if (porDuracao === false) {
-      if (!parametro_busca_fim) {
-        throw new Error(
-          'parametro_busca_fim obrigatório quando porDuracao=false',
-        );
-      }
       ({ labels, valores } = processarDuracaoAtendimentos(
         dadosFiltrados,
         parametro_busca,
@@ -228,7 +187,6 @@ export function criarGrafico(
             onClick: (_, item) => {
               const val = grafico.data.labels[item.index];
               if (porDuracao === false) {
-                // usa chave composta para duração
                 toggleFiltro(
                   dadosOriginais,
                   `${parametro_busca}|${parametro_busca_fim}_duracao`,
@@ -237,6 +195,7 @@ export function criarGrafico(
               } else {
                 toggleFiltro(dadosOriginais, parametro_busca, val);
               }
+              aplicarFiltrosTabela();
               atualizarTodosOsGraficos();
             },
           },
@@ -324,15 +283,319 @@ function atualizarTodosOsGraficos() {
   });
 }
 
-// Se precisar de botões de mês na interface, mantém igual
+// Se precisar de botões de mês na interface
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   ordemMeses.forEach((mes) => {
     const btn = document.createElement('button');
     btn.innerText = mes;
     btn.onclick = () => {
       toggleFiltro(dadosOriginais, parametro, mes);
+      aplicarFiltrosTabela();
       atualizarTodosOsGraficos();
     };
     document.body.appendChild(btn);
   });
 }
+
+// ─━━━ INÍCIO: DataTable integrado ━━━━
+
+// Configurações padrão para DataTable
+const CONFIG_TABLE = {
+  itemsPerPage: 50,
+  maxRenderedPages: 5,
+  currentPage: 1,
+  totalPages: 1,
+  virtualRowHeight: 35,
+  debounceTime: 200,
+  chunkSize: 1000,
+};
+
+// Estado interno do DataTable
+let dtDadosOriginais = [];
+let dtDadosFiltrados = [];
+let dtColunas = [];
+let dtContainers = {};
+
+// Cria DataTable e inicializa virtualização e filtros
+export async function criarDataTable(
+  selector,
+  dados,
+  colunas = ['cliente', 'servico', 'prioridade'],
+) {
+  dtDadosOriginais = dados;
+  dtDadosFiltrados = [...dados];
+  dtColunas = colunas;
+  dtContainers = configurarTabelaVirtualizada(selector);
+
+  adicionarEstilosTabela();
+  await processarDadosEmChunksTabela(dtDadosFiltrados);
+  atualizarAlturaVirtualTabela();
+  renderizarLinhasVisiveisTabela();
+  atualizarPaginacaoTabela();
+  atualizarInfoTabela();
+}
+
+// Configura estrutura da tabela virtualizada
+function configurarTabelaVirtualizada(selector) {
+  const tableContainer = document.querySelector(selector);
+  tableContainer.innerHTML = '';
+
+  const headerContainer = document.createElement('div');
+  headerContainer.className = 'table-header';
+  const headerTable = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  dtColunas.forEach((col) => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    th.dataset.coluna = col;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  headerTable.appendChild(thead);
+  headerContainer.appendChild(headerTable);
+
+  const contentContainer = document.createElement('div');
+  contentContainer.className = 'table-content';
+  contentContainer.id = 'virtual-scroll-container';
+
+  const virtualHeight = document.createElement('div');
+  virtualHeight.className = 'virtual-height';
+  virtualHeight.id = 'virtual-height';
+
+  const contentTable = document.createElement('table');
+  contentTable.id = 'data-table';
+  const contentTbody = document.createElement('tbody');
+  contentTbody.id = 'data-tbody';
+  contentTable.appendChild(contentTbody);
+
+  contentContainer.appendChild(virtualHeight);
+  contentContainer.appendChild(contentTable);
+
+  const paginationContainer = document.createElement('div');
+  paginationContainer.id = 'pagination';
+  paginationContainer.className = 'pagination-controls';
+
+  const infoContainer = document.createElement('div');
+  infoContainer.id = 'table-info';
+  infoContainer.className = 'table-info';
+
+  tableContainer.appendChild(infoContainer);
+  tableContainer.appendChild(headerContainer);
+  tableContainer.appendChild(contentContainer);
+  tableContainer.appendChild(paginationContainer);
+
+  configurarEventosTabela();
+  return {
+    headerTable,
+    contentTable,
+    contentTbody,
+    contentContainer,
+    virtualHeight,
+    paginationContainer,
+    infoContainer,
+  };
+}
+
+// Processa dados em chunks para não bloquear UI
+function processarDadosEmChunksTabela(dados) {
+  return new Promise((resolve) => {
+    const processarChunk = (start) => {
+      const end = Math.min(start + CONFIG_TABLE.chunkSize, dados.length);
+      // nada específico aqui, apenas percorrer dados
+      for (let i = start; i < end; i++); // iteração vazia
+
+      const progresso = Math.round((end / dados.length) * 100);
+      atualizarIndicadorProgressoTabela(progresso);
+
+      if (end < dados.length) requestAnimationFrame(() => processarChunk(end));
+      else resolve();
+    };
+    requestAnimationFrame(() => processarChunk(0));
+  });
+}
+
+// Atualiza barra de progresso do processamento
+function atualizarIndicadorProgressoTabela(percentual) {
+  let progressBar = document.getElementById('progress-bar');
+  if (!progressBar) {
+    const container = document.createElement('div');
+    container.className = 'progress-container';
+    container.innerHTML = `<div class=\"progress-text\">Processando dados: <span id=\"progress-percent\">0</span>%</div><div class=\"progress-bar-container\"><div id=\"progress-bar\" class=\"progress-bar\"></div></div>`;
+    dtContainers.infoContainer.appendChild(container);
+    progressBar = document.getElementById('progress-bar');
+  }
+  progressBar.style.width = `${percentual}%`;
+  const pct = document.getElementById('progress-percent');
+  if (pct) pct.textContent = percentual;
+  if (percentual >= 100)
+    setTimeout(() => {
+      const c = document.querySelector('.progress-container');
+      if (c) c.remove();
+    }, 500);
+}
+
+// Renderiza somente linhas visíveis
+function renderizarLinhasVisiveisTabela() {
+  const { contentContainer, virtualHeight } = dtContainers;
+  const tbody = document.getElementById('data-tbody');
+  if (!contentContainer || !virtualHeight || !tbody) return;
+
+  const scrollTop = contentContainer.scrollTop;
+  const viewH = contentContainer.clientHeight;
+  const startIdx = Math.floor(scrollTop / CONFIG_TABLE.virtualRowHeight);
+  const visibleCount = Math.ceil(viewH / CONFIG_TABLE.virtualRowHeight) + 5;
+  const endIdx = Math.min(startIdx + visibleCount, dtDadosFiltrados.length);
+
+  virtualHeight.style.height = `${
+    dtDadosFiltrados.length * CONFIG_TABLE.virtualRowHeight
+  }px`;
+  tbody.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const tr = document.createElement('tr');
+    tr.style.position = 'absolute';
+    tr.style.top = `${i * CONFIG_TABLE.virtualRowHeight}px`;
+    dtColunas.forEach((col) => {
+      const td = document.createElement('td');
+      td.textContent = dtDadosFiltrados[i][col];
+      td.className = 'celula-clicavel';
+      td.dataset.coluna = col;
+      td.dataset.valor = dtDadosFiltrados[i][col];
+      tr.appendChild(td);
+    });
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+}
+
+// Atualiza altura virtual
+function atualizarAlturaVirtualTabela() {
+  dtContainers.virtualHeight.style.height = `${
+    dtDadosFiltrados.length * CONFIG_TABLE.virtualRowHeight
+  }px`;
+}
+
+// Navegação entre páginas (posiciona scroll)
+function navegarParaPagina(pagina) {
+  if (pagina < 1 || pagina > CONFIG_TABLE.totalPages) return;
+  CONFIG_TABLE.currentPage = pagina;
+  dtContainers.contentContainer.scrollTop =
+    (pagina - 1) * CONFIG_TABLE.itemsPerPage * CONFIG_TABLE.virtualRowHeight;
+}
+
+// Atualiza controles de paginação
+function atualizarPaginacaoTabela() {
+  const pc = dtContainers.paginationContainer;
+  if (!pc) return;
+  pc.innerHTML = '';
+  CONFIG_TABLE.totalPages = Math.ceil(
+    dtDadosFiltrados.length / CONFIG_TABLE.itemsPerPage,
+  );
+  if (CONFIG_TABLE.totalPages <= 1) return;
+
+  const frag = document.createDocumentFragment();
+  const prev = document.createElement('button');
+  prev.textContent = '« Anterior';
+  prev.disabled = CONFIG_TABLE.currentPage === 1;
+  prev.addEventListener('click', () =>
+    navegarParaPagina(CONFIG_TABLE.currentPage - 1),
+  );
+  frag.appendChild(prev);
+
+  let startPage = Math.max(
+    1,
+    CONFIG_TABLE.currentPage - Math.floor(CONFIG_TABLE.maxRenderedPages / 2),
+  );
+  let endPage = Math.min(
+    CONFIG_TABLE.totalPages,
+    startPage + CONFIG_TABLE.maxRenderedPages - 1,
+  );
+  if (endPage - startPage < CONFIG_TABLE.maxRenderedPages - 1)
+    startPage = Math.max(1, endPage - CONFIG_TABLE.maxRenderedPages + 1);
+
+  for (let p = startPage; p <= endPage; p++) {
+    const btn = document.createElement('button');
+    btn.textContent = p;
+    btn.disabled = p === CONFIG_TABLE.currentPage;
+    btn.addEventListener('click', () => navegarParaPagina(p));
+    frag.appendChild(btn);
+  }
+
+  const next = document.createElement('button');
+  next.textContent = 'Próximo »';
+  next.disabled = CONFIG_TABLE.currentPage === CONFIG_TABLE.totalPages;
+  next.addEventListener('click', () =>
+    navegarParaPagina(CONFIG_TABLE.currentPage + 1),
+  );
+  frag.appendChild(next);
+
+  pc.appendChild(frag);
+}
+
+// Configura eventos de filtro na tabela
+function configurarEventosTabela() {
+  document.addEventListener('click', (event) => {
+    const t = event.target;
+    if (t.classList.contains('celula-clicavel')) {
+      const col = t.dataset.coluna;
+      const val = t.dataset.valor;
+      if (!filtrosAtuais[col] || !filtrosAtuais[col].includes(val))
+        filtrosAtuais[col] = [val];
+      else delete filtrosAtuais[col];
+      aplicarFiltrosTabela();
+      atualizarTodosOsGraficos();
+    }
+    if (t.id === 'resetFiltroTabela') {
+      Object.keys(filtrosAtuais).forEach((k) => delete filtrosAtuais[k]);
+      aplicarFiltrosTabela();
+      atualizarTodosOsGraficos();
+    }
+  });
+}
+
+// Aplica filtros globais na tabela
+function aplicarFiltrosTabela() {
+  if (Object.keys(filtrosAtuais).length === 0)
+    dtDadosFiltrados = [...dtDadosOriginais];
+  else
+    dtDadosFiltrados = dtDadosOriginais.filter((item) =>
+      Object.entries(filtrosAtuais).every(([col, vals]) =>
+        vals.includes(item[col]),
+      ),
+    );
+  atualizarAlturaVirtualTabela();
+  renderizarLinhasVisiveisTabela();
+  atualizarPaginacaoTabela();
+  atualizarInfoTabela();
+}
+
+// Atualiza informações da tabela
+function atualizarInfoTabela() {
+  const infoCon = dtContainers.infoContainer;
+  if (!infoCon) return;
+  const total = dtDadosOriginais.length;
+  const filt = dtDadosFiltrados.length;
+  infoCon.textContent = Object.keys(filtrosAtuais).length
+    ? `Mostrando ${filt} de ${total} registros>`
+    : `Total: ${total} registros`;
+}
+
+// Adiciona estilos básicos para DataTable
+function adicionarEstilosTabela() {
+  if (document.getElementById('estilos-data-table')) return;
+  const style = document.createElement('style');
+  style.id = 'estilos-data-table';
+  style.textContent = `
+    .table-header table { width: 100%; border-collapse: collapse; }
+    .table-content { position: relative; overflow-y: auto; height: 400px; }
+    .virtual-height { width: 1px; opacity: 0; }
+    #data-table { position: absolute; top: 0; left: 0; width: 100%; border-collapse: collapse; }
+    .celula-clicavel { cursor: pointer; }
+    #pagination { margin-top: 8px; }
+    .table-info { margin-bottom: 8px; }
+  `;
+  document.head.appendChild(style);
+}
+// ─━━━ FIM: DataTable integrado ━━━━
