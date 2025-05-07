@@ -179,10 +179,16 @@ export function criarGrafico(
   porDuracao = true,
   parametro_busca_fim = null,
 ) {
-  const dadosOriginais = [...obj];
+  // Cópia imutável dos dados originais
+  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   let tipoAtual = tipoInicial;
   let grafico;
+  let lastLabels = [];
+  let lastValores = [];
 
+  const wrapper = ctx.canvas.parentNode; // container do <canvas>
+
+  // Função que (re)desenha o gráfico
   function renderizar() {
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
@@ -202,6 +208,17 @@ export function criarGrafico(
       ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
     }
 
+    lastLabels = labels;
+    lastValores = valores;
+
+    // Se já existia, destrói e remove do registro
+    if (grafico) {
+      grafico.destroy();
+      const idx = todosOsGraficos.findIndex((g) => g.grafico === grafico);
+      if (idx > -1) todosOsGraficos.splice(idx, 1);
+    }
+
+    // Configuração do Chart.js
     const config = {
       type: tipoAtual,
       data: {
@@ -216,6 +233,11 @@ export function criarGrafico(
         ],
       },
       options: {
+        responsive: true,
+        scales:
+          tipoAtual === 'bar' || tipoAtual === 'line'
+            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            : undefined,
         plugins: {
           legend: {
             display: true,
@@ -232,38 +254,24 @@ export function criarGrafico(
             },
             onClick: (_, item) => {
               const val = grafico.data.labels[item.index];
-              if (porDuracao === false) {
-                // usa chave composta para duração
-                toggleFiltro(
-                  dadosOriginais,
-                  `${parametro_busca}|${parametro_busca_fim}_duracao`,
-                  val,
-                );
-              } else {
-                toggleFiltro(dadosOriginais, parametro_busca, val);
-              }
+              // aplica o filtro corretamente
+              toggleFiltro(
+                parametro_busca,
+                porDuracao
+                  ? val
+                  : `${parametro_busca}|${parametro_busca_fim}_duracao:${val}`,
+              );
               atualizarTodosOsGraficos();
             },
           },
         },
-        scales:
-          tipoAtual === 'bar' || tipoAtual === 'line'
-            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-            : undefined,
       },
     };
 
-    if (grafico) {
-      grafico.destroy();
-      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
-    }
-
+    // Cria o gráfico
     grafico = new Chart(ctx, config);
-    calcularTotal(dadosOriginais, (total) => {
-      grafico.total = total;
-      if (callback) callback({ total, variacaoTexto: null });
-    });
 
+    // Registra para atualizações globais
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
@@ -271,14 +279,36 @@ export function criarGrafico(
       porDuracao,
       parametro_busca_fim,
     });
+
+    // Notifica callback
+    if (callback) {
+      const total = getDadosAtuais(dadosOriginais).length;
+      callback({ total, variacaoTexto: null });
+    }
   }
 
+  // primeiro render
   renderizar();
 
-  // seletor de tipo
+  // ——— CONTROLES VISUAIS ———
+  // container de botões
+  const controls = document.createElement('div');
+  Object.assign(controls.style, {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+  });
+
+  // select de tipos
   const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
   const sel = document.createElement('select');
-  sel.style.margin = '8px';
+  Object.assign(sel.style, {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    cursor: 'pointer',
+  });
   tipos.forEach((t) => {
     const o = document.createElement('option');
     o.value = t;
@@ -290,7 +320,90 @@ export function criarGrafico(
     tipoAtual = sel.value;
     renderizar();
   });
-  ctx.canvas.parentNode.insertBefore(sel, ctx.canvas.nextSibling);
+  controls.appendChild(sel);
+
+  // botão de alternar tabela
+  const btn = document.createElement('button');
+  btn.textContent = 'Ver tabela';
+  Object.assign(btn.style, {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    cursor: 'pointer',
+    background: '#f9f9f9',
+  });
+  controls.appendChild(btn);
+
+  // insere os controles antes do canvas
+  wrapper.insertBefore(controls, ctx.canvas);
+
+  // container da tabela (inicialmente escondido)
+  const tableContainer = document.createElement('div');
+  tableContainer.style.display = 'none';
+  wrapper.appendChild(tableContainer);
+
+  // estado de visibilidade
+  let tabelaVisivel = false;
+
+  btn.addEventListener('click', () => {
+    tabelaVisivel = !tabelaVisivel;
+
+    if (tabelaVisivel) {
+      // esconder gráfico, mostrar tabela
+      ctx.canvas.style.display = 'none';
+      tableContainer.style.display = 'block';
+      btn.textContent = 'Ver gráfico';
+
+      // popula a tabela com última labels/valores
+      tableContainer.innerHTML = '';
+      const tbl = document.createElement('table');
+      Object.assign(tbl.style, {
+        width: '100%',
+        borderCollapse: 'collapse',
+      });
+
+      // cabeçalho
+      const thead = document.createElement('thead');
+      const thr = document.createElement('tr');
+      [parametro_busca, 'Valor'].forEach((h) => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        Object.assign(th.style, {
+          border: '1px solid #ddd',
+          padding: '8px',
+          background: '#f5f5f5',
+          textAlign: 'left',
+        });
+        thr.appendChild(th);
+      });
+      thead.appendChild(thr);
+      tbl.appendChild(thead);
+
+      // corpo
+      const tb = document.createElement('tbody');
+      lastLabels.forEach((lab, i) => {
+        const tr = document.createElement('tr');
+        [lab, lastValores[i]].forEach((txt) => {
+          const td = document.createElement('td');
+          td.textContent = txt;
+          Object.assign(td.style, {
+            border: '1px solid #ddd',
+            padding: '8px',
+          });
+          tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+
+      tableContainer.appendChild(tbl);
+    } else {
+      // mostrar gráfico de novo
+      tableContainer.style.display = 'none';
+      ctx.canvas.style.display = 'block';
+      btn.textContent = 'Ver tabela';
+    }
+  });
 }
 
 function toggleFiltro(parametro, valor) {
