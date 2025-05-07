@@ -1,10 +1,20 @@
 import Chart from 'chart.js/auto';
 
-// Variáveis globais
-var filtrosAtuais = {}; // Objeto para armazenar filtros gerais e de duração
+// --- UTILIDADES ---
+// Debounce para scroll
+function debounce(fn, delay) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
+
+// --- VARIÁVEIS GLOBAIS ---
+var filtrosAtuais = {}; // Objeto para armazenar filtros
 var todosOsGraficos = []; // Lista de gráficos
 
-// Ordem fixa de meses para garantir Janeiro→Dezembro
+// Meses
 const ordemMeses = [
   'Janeiro',
   'Fevereiro',
@@ -19,8 +29,6 @@ const ordemMeses = [
   'Novembro',
   'Dezembro',
 ];
-
-// Cache para converter “MM” → nome do mês
 const cacheMeses = {
   '01': 'Janeiro',
   '02': 'Fevereiro',
@@ -36,53 +44,29 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-// --- funções de filtro e totalização ---
-
+// --- FILTRAGEM COMUM ---
 function getDadosAtuais(dadosOriginais) {
   return dadosOriginais.filter(
     (item) =>
       !Object.entries(filtrosAtuais).some(([param, vals]) => {
+        if (!item.hasOwnProperty(param)) return false; // ignora filtros não-mapeados
         let v = item[param];
-        if (v && /^\\d{4}-\\d{2}-\\d{2} /.test(v)) {
-          const m = v.slice(5, 7);
-          v = cacheMeses[m];
-        }
+        if (/^\d{4}-\d{2}-\d{2} /.test(v)) v = cacheMeses[v.slice(5, 7)];
         return !vals.includes(v);
       }),
   );
 }
 
-function calcularTotal(dadosOriginais, callback) {
-  const total = getDadosAtuais(dadosOriginais).length;
-  if (callback) callback(total);
-  return total;
-}
-
-// --- processamento de dados condicional ---
-
-function processarDados(dados, parametro_busca) {
-  const isDateTime = (v) =>
-    /^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/.test(v);
-  const contagem = new Map();
-
+// --- PROCESSAMENTO DE DADOS ---
+function processarDados(dados, campo) {
+  const counts = new Map();
   dados.forEach((item) => {
-    let chave = item[parametro_busca];
-    if (!chave) return;
-    if (isDateTime(chave)) {
-      const m = chave.slice(5, 7);
-      chave = cacheMeses[m];
-    }
-    contagem.set(chave, (contagem.get(chave) || 0) + 1);
+    let k = item[campo];
+    if (!k) return;
+    if (/^\d{4}-\d{2}-\d{2} /.test(k)) k = cacheMeses[k.slice(5, 7)];
+    counts.set(k, (counts.get(k) || 0) + 1);
   });
-
-  const labels = [];
-  const valores = [];
-  for (let [k, v] of contagem.entries()) {
-    labels.push(k);
-    valores.push(v);
-  }
-
-  return { labels, valores };
+  return { labels: [...counts.keys()], valores: [...counts.values()] };
 }
 
 function binsGlobais() {
@@ -93,78 +77,60 @@ function binsGlobais() {
     { label: '> 60 min', min: 60, max: Infinity },
   ];
 }
-
-function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
-  const bins = binsGlobais();
-  const contagem = bins.map(() => 0);
-
+function processarDuracao(dados, iniKey, fimKey) {
+  const bins = binsGlobais(),
+    cont = bins.map((_) => 0);
   dados.forEach((item) => {
-    const ini = Date.parse(item[campoInicio]);
-    const fim = Date.parse(item[campoFim]);
-    if (isNaN(ini) || isNaN(fim) || fim < ini) return;
-    const diffMin = (fim - ini) / 60000;
-    for (let i = 0; i < bins.length; i++) {
-      if (diffMin >= bins[i].min && diffMin < bins[i].max) {
-        contagem[i]++;
-        break;
-      }
-    }
+    const i = Date.parse(item[iniKey]),
+      f = Date.parse(item[fimKey]);
+    if (isNaN(i) || isNaN(f) || f < i) return;
+    const d = (f - i) / 60000;
+    bins.forEach((b, j) => {
+      if (d >= b.min && d < b.max) cont[j]++;
+    });
   });
-
-  const durKey = `${campoInicio}|${campoFim}_duracao`;
-  const filtroDur = filtrosAtuais[durKey];
-  const labels = [];
-  const valores = [];
+  const durKey = `${iniKey}|${fimKey}_duracao`;
+  const filtro = filtrosAtuais[durKey];
+  const labels = [],
+    valores = [];
   bins.forEach((b, i) => {
-    if (contagem[i] > 0 && (!filtroDur || filtroDur.includes(b.label))) {
+    if (cont[i] > 0 && (!filtro || filtro.includes(b.label))) {
       labels.push(b.label);
-      valores.push(contagem[i]);
+      valores.push(cont[i]);
     }
   });
-
   return { labels, valores };
 }
 
-// --- criação e atualização de gráficos ---
-
+// --- GRÁFICOS ---
 export function criarGrafico(
   ctx,
-  tipoInicial,
-  parametro_busca,
-  backgroundColor,
-  chave,
-  obj,
-  callback,
+  tipoInit,
+  campo,
+  cores,
+  label,
+  dados,
+  cb,
   porDuracao = true,
-  parametro_busca_fim = null,
+  fimCampo = null,
 ) {
-  const dadosOriginais = [...obj];
-  let tipoAtual = tipoInicial;
-  let grafico;
-
-  function renderizar() {
-    const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    let labels, valores;
-
-    if (porDuracao === false) {
-      ({ labels, valores } = processarDuracaoAtendimentos(
-        dadosFiltrados,
-        parametro_busca,
-        parametro_busca_fim,
-      ));
-    } else {
-      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
-    }
-
-    const config = {
-      type: tipoAtual,
+  const orig = [...dados];
+  let tipo = tipoInit;
+  let chart;
+  function render() {
+    const df = getDadosAtuais(orig);
+    const res = porDuracao
+      ? processarDados(df, campo)
+      : processarDuracao(df, campo, fimCampo);
+    const cfg = {
+      type: tipo,
       data: {
-        labels,
+        labels: res.labels,
         datasets: [
           {
-            label: chave,
-            data: valores,
-            backgroundColor: backgroundColor.slice(0, labels.length),
+            label,
+            data: res.valores,
+            backgroundColor: cores.slice(0, res.labels.length),
             borderWidth: 1,
           },
         ],
@@ -172,430 +138,196 @@ export function criarGrafico(
       options: {
         plugins: {
           legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((lab, i) => ({
-                  text: lab,
-                  fillStyle: ds.backgroundColor[i],
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
-              },
-            },
             onClick: (_, item) => {
-              const val = grafico.data.labels[item.index];
-              if (porDuracao === false) {
-                toggleFiltro(
-                  dadosOriginais,
-                  `${parametro_busca}|${parametro_busca_fim}_duracao`,
-                  val,
-                );
-              } else {
-                toggleFiltro(dadosOriginais, parametro_busca, val);
-              }
+              const v = chart.data.labels[item.index];
+              const param = porDuracao ? campo : `${campo}|${fimCampo}_duracao`;
+              toggleFiltro(param, v);
               aplicarFiltrosTabela();
               atualizarTodosOsGraficos();
             },
           },
         },
         scales:
-          tipoAtual === 'bar' || tipoAtual === 'line'
+          tipo === 'bar' || tipo === 'line'
             ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-            : undefined,
+            : {},
       },
     };
-
-    if (grafico) {
-      grafico.destroy();
-      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
+    if (chart) {
+      chart.destroy();
+      todosOsGraficos = todosOsGraficos.filter((e) => e.chart !== chart);
     }
-
-    grafico = new Chart(ctx, config);
-    calcularTotal(dadosOriginais, (total) => {
-      grafico.total = total;
-      if (callback) callback({ total, variacaoTexto: null });
-    });
-
-    todosOsGraficos.push({
-      grafico,
-      dadosOriginais,
-      parametro_busca,
-      porDuracao,
-      parametro_busca_fim,
-    });
+    chart = new Chart(ctx, cfg);
+    cb && cb(getDadosAtuais(orig).length);
+    todosOsGraficos.push({ chart, orig, campo, porDuracao, fimCampo });
   }
-
-  renderizar();
-
-  // seletor de tipo
-  const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
+  render();
+  // seletor tipo
   const sel = document.createElement('select');
-  sel.style.margin = '8px';
-  tipos.forEach((t) => {
+  ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].forEach((t) => {
     const o = document.createElement('option');
     o.value = t;
-    o.text = t.charAt(0).toUpperCase() + t.slice(1);
-    if (t === tipoAtual) o.selected = true;
-    sel.appendChild(o);
+    o.text = t;
+    if (t === tipo) o.selected = true;
+    sel.append(o);
   });
-  sel.addEventListener('change', () => {
-    tipoAtual = sel.value;
-    renderizar();
-  });
+  sel.onchange = () => {
+    tipo = sel.value;
+    render();
+  };
   ctx.canvas.parentNode.insertBefore(sel, ctx.canvas.nextSibling);
 }
-
-function toggleFiltro(dadosOriginais, parametro, valor) {
-  if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
-  const idx = filtrosAtuais[parametro].indexOf(valor);
-  if (idx === -1) filtrosAtuais[parametro].push(valor);
+function toggleFiltro(param, valor) {
+  if (!filtrosAtuais[param]) filtrosAtuais[param] = [];
+  const i = filtrosAtuais[param].indexOf(valor);
+  if (i === -1) filtrosAtuais[param].push(valor);
   else {
-    filtrosAtuais[parametro].splice(idx, 1);
-    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
+    filtrosAtuais[param].splice(i, 1);
+    if (!filtrosAtuais[param].length) delete filtrosAtuais[param];
   }
 }
-
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach((entry) => {
-    const {
-      grafico,
-      dadosOriginais,
-      parametro_busca,
-      porDuracao,
-      parametro_busca_fim,
-    } = entry;
-    const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    let labels, valores;
-    if (porDuracao === false) {
-      ({ labels, valores } = processarDuracaoAtendimentos(
-        dadosFiltrados,
-        parametro_busca,
-        parametro_busca_fim,
-      ));
-    } else {
-      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
-    }
-    grafico.data.labels = labels;
-    grafico.data.datasets[0].data = valores;
-    grafico.update();
+  todosOsGraficos.forEach((e) => {
+    const df = getDadosAtuais(e.orig);
+    const res = e.porDuracao
+      ? processarDados(df, e.campo)
+      : processarDuracao(df, e.campo, e.fimCampo);
+    e.chart.data.labels = res.labels;
+    e.chart.data.datasets[0].data = res.valores;
+    e.chart.update();
   });
 }
 
-// Se precisar de botões de mês na interface
-export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
-  ordemMeses.forEach((mes) => {
-    const btn = document.createElement('button');
-    btn.innerText = mes;
-    btn.onclick = () => {
-      toggleFiltro(dadosOriginais, parametro, mes);
+export function adicionarFiltrosDeMeses(dados, campo) {
+  ordemMeses.forEach((m) => {
+    const b = document.createElement('button');
+    b.innerText = m;
+    b.onclick = () => {
+      toggleFiltro(campo, m);
       aplicarFiltrosTabela();
       atualizarTodosOsGraficos();
     };
-    document.body.appendChild(btn);
+    document.body.append(b);
   });
 }
 
-// ─━━━ INÍCIO: DataTable integrado ━━━━
-
-// Configurações padrão para DataTable
+// --- DATATABLE ---
 const CONFIG_TABLE = {
   itemsPerPage: 50,
-  maxRenderedPages: 5,
-  currentPage: 1,
-  totalPages: 1,
+  maxPages: 5,
   virtualRowHeight: 35,
-  debounceTime: 200,
-  chunkSize: 1000,
+  debounceTime: 100,
 };
-
-// Estado interno do DataTable
-let dtDadosOriginais = [];
-let dtDadosFiltrados = [];
-let dtColunas = [];
-let dtContainers = {};
-
-// Cria DataTable e inicializa virtualização e filtros
-export async function criarDataTable(
-  selector,
-  dados,
-  colunas = ['cliente', 'servico', 'prioridade'],
-) {
-  dtDadosOriginais = dados;
-  dtDadosFiltrados = [...dados];
-  dtColunas = colunas;
-  dtContainers = configurarTabelaVirtualizada(selector);
-
-  adicionarEstilosTabela();
-  await processarDadosEmChunksTabela(dtDadosFiltrados);
-  atualizarAlturaVirtualTabela();
-  renderizarLinhasVisiveisTabela();
-  atualizarPaginacaoTabela();
-  atualizarInfoTabela();
+let dtOrig = [];
+let dtFilt = [];
+let dtCols = [];
+let dtCont = {};
+export async function criarDataTable(sel, dados, cols = []) {
+  dtOrig = dados;
+  dtFilt = [...dados];
+  dtCols = cols;
+  dtCont = configurarTabela(sel);
+  adicionarEstilos();
+  await processarChunks(dtFilt);
+  dtCont.content.addEventListener(
+    'scroll',
+    debounce(renderVisiveis, CONFIG_TABLE.debounceTime),
+  );
+  renderVisiveis();
+  atualizarPag();
+  updInfo();
 }
-
-// Configura estrutura da tabela virtualizada
-function configurarTabelaVirtualizada(selector) {
-  const tableContainer = document.querySelector(selector);
-  tableContainer.innerHTML = '';
-
-  const headerContainer = document.createElement('div');
-  headerContainer.className = 'table-header';
-  const headerTable = document.createElement('table');
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  dtColunas.forEach((col) => {
-    const th = document.createElement('th');
-    th.textContent = col;
-    th.dataset.coluna = col;
-    headerRow.appendChild(th);
+function configurarTabela(sel) {
+  const c = document.querySelector(sel);
+  c.innerHTML = '';
+  const info = document.createElement('div');
+  const hdrDiv = document.createElement('div');
+  const tblH = document.createElement('table');
+  const th = document.createElement('thead');
+  const row = document.createElement('tr');
+  dtCols.forEach((col) => {
+    const h = document.createElement('th');
+    h.textContent = col;
+    row.append(h);
   });
-  thead.appendChild(headerRow);
-  headerTable.appendChild(thead);
-  headerContainer.appendChild(headerTable);
-
-  const contentContainer = document.createElement('div');
-  contentContainer.className = 'table-content';
-  contentContainer.id = 'virtual-scroll-container';
-
-  const virtualHeight = document.createElement('div');
-  virtualHeight.className = 'virtual-height';
-  virtualHeight.id = 'virtual-height';
-
-  const contentTable = document.createElement('table');
-  contentTable.id = 'data-table';
-  const contentTbody = document.createElement('tbody');
-  contentTbody.id = 'data-tbody';
-  contentTable.appendChild(contentTbody);
-
-  contentContainer.appendChild(virtualHeight);
-  contentContainer.appendChild(contentTable);
-
-  const paginationContainer = document.createElement('div');
-  paginationContainer.id = 'pagination';
-  paginationContainer.className = 'pagination-controls';
-
-  const infoContainer = document.createElement('div');
-  infoContainer.id = 'table-info';
-  infoContainer.className = 'table-info';
-
-  tableContainer.appendChild(infoContainer);
-  tableContainer.appendChild(headerContainer);
-  tableContainer.appendChild(contentContainer);
-  tableContainer.appendChild(paginationContainer);
-
-  configurarEventosTabela();
-  return {
-    headerTable,
-    contentTable,
-    contentTbody,
-    contentContainer,
-    virtualHeight,
-    paginationContainer,
-    infoContainer,
-  };
+  th.append(row);
+  tblH.append(th);
+  hdrDiv.append(tblH);
+  const content = document.createElement('div');
+  content.className = 'table-content';
+  const vh = document.createElement('div');
+  vh.className = 'virtual-height';
+  const tbl = document.createElement('table');
+  const body = document.createElement('tbody');
+  tbl.append(body);
+  content.append(vh, tbl);
+  const pag = document.createElement('div');
+  pag.className = 'pagination';
+  c.append(info, hdrDiv, content, pag);
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('cel-click')) {
+      const col = e.target.dataset.col,
+        colv = e.target.dataset.val;
+      toggleFiltro(col, colv);
+      aplicarFiltrosTabela();
+      atualizarTodosOsGraficos();
+      renderVisiveis();
+      updInfo();
+    }
+  });
+  return { info, header: hdrDiv, content, virtual: vh, body, pag };
 }
-
-// Processa dados em chunks para não bloquear UI
-function processarDadosEmChunksTabela(dados) {
-  return new Promise((resolve) => {
-    const processarChunk = (start) => {
-      const end = Math.min(start + CONFIG_TABLE.chunkSize, dados.length);
-      // nada específico aqui, apenas percorrer dados
-      for (let i = start; i < end; i++); // iteração vazia
-
-      const progresso = Math.round((end / dados.length) * 100);
-      atualizarIndicadorProgressoTabela(progresso);
-
-      if (end < dados.length) requestAnimationFrame(() => processarChunk(end));
-      else resolve();
-    };
-    requestAnimationFrame(() => processarChunk(0));
+function processarChunks(dados) {
+  return new Promise((r) => {
+    const step = CONFIG_TABLE.virtualRowHeight;
+    r();
   });
 }
-
-// Atualiza barra de progresso do processamento
-function atualizarIndicadorProgressoTabela(percentual) {
-  let progressBar = document.getElementById('progress-bar');
-  if (!progressBar) {
-    const container = document.createElement('div');
-    container.className = 'progress-container';
-    container.innerHTML = `<div class=\"progress-text\">Processando dados: <span id=\"progress-percent\">0</span>%</div><div class=\"progress-bar-container\"><div id=\"progress-bar\" class=\"progress-bar\"></div></div>`;
-    dtContainers.infoContainer.appendChild(container);
-    progressBar = document.getElementById('progress-bar');
-  }
-  progressBar.style.width = `${percentual}%`;
-  const pct = document.getElementById('progress-percent');
-  if (pct) pct.textContent = percentual;
-  if (percentual >= 100)
-    setTimeout(() => {
-      const c = document.querySelector('.progress-container');
-      if (c) c.remove();
-    }, 500);
-}
-
-// Renderiza somente linhas visíveis
-function renderizarLinhasVisiveisTabela() {
-  const { contentContainer, virtualHeight } = dtContainers;
-  const tbody = document.getElementById('data-tbody');
-  if (!contentContainer || !virtualHeight || !tbody) return;
-
-  const scrollTop = contentContainer.scrollTop;
-  const viewH = contentContainer.clientHeight;
-  const startIdx = Math.floor(scrollTop / CONFIG_TABLE.virtualRowHeight);
-  const visibleCount = Math.ceil(viewH / CONFIG_TABLE.virtualRowHeight) + 5;
-  const endIdx = Math.min(startIdx + visibleCount, dtDadosFiltrados.length);
-
-  virtualHeight.style.height = `${
-    dtDadosFiltrados.length * CONFIG_TABLE.virtualRowHeight
-  }px`;
-  tbody.innerHTML = '';
-  const frag = document.createDocumentFragment();
-
-  for (let i = startIdx; i < endIdx; i++) {
+function renderVisiveis() {
+  const { content, virtual, body } = dtCont;
+  const h = content.scrollTop;
+  const vview = content.clientHeight;
+  const start = Math.floor(h / CONFIG_TABLE.virtualRowHeight);
+  const count = Math.ceil(vview / CONFIG_TABLE.virtualRowHeight) + 5;
+  const end = Math.min(start + count, dtFilt.length);
+  virtual.style.height = `${dtFilt.length * CONFIG_TABLE.virtualRowHeight}px`;
+  body.innerHTML = '';
+  for (let i = start; i < end; i++) {
     const tr = document.createElement('tr');
     tr.style.position = 'absolute';
     tr.style.top = `${i * CONFIG_TABLE.virtualRowHeight}px`;
-    dtColunas.forEach((col) => {
+    dtCols.forEach((c) => {
       const td = document.createElement('td');
-      td.textContent = dtDadosFiltrados[i][col];
-      td.className = 'celula-clicavel';
-      td.dataset.coluna = col;
-      td.dataset.valor = dtDadosFiltrados[i][col];
-      tr.appendChild(td);
+      td.textContent = dtFilt[i][c];
+      td.className = 'cel-click';
+      td.dataset.col = c;
+      td.dataset.val = dtFilt[i][c];
+      tr.append(td);
     });
-    frag.appendChild(tr);
+    body.append(tr);
   }
-  tbody.appendChild(frag);
 }
-
-// Atualiza altura virtual
-function atualizarAlturaVirtualTabela() {
-  dtContainers.virtualHeight.style.height = `${
-    dtDadosFiltrados.length * CONFIG_TABLE.virtualRowHeight
-  }px`;
-}
-
-// Navegação entre páginas (posiciona scroll)
-function navegarParaPagina(pagina) {
-  if (pagina < 1 || pagina > CONFIG_TABLE.totalPages) return;
-  CONFIG_TABLE.currentPage = pagina;
-  dtContainers.contentContainer.scrollTop =
-    (pagina - 1) * CONFIG_TABLE.itemsPerPage * CONFIG_TABLE.virtualRowHeight;
-}
-
-// Atualiza controles de paginação
-function atualizarPaginacaoTabela() {
-  const pc = dtContainers.paginationContainer;
-  if (!pc) return;
-  pc.innerHTML = '';
-  CONFIG_TABLE.totalPages = Math.ceil(
-    dtDadosFiltrados.length / CONFIG_TABLE.itemsPerPage,
-  );
-  if (CONFIG_TABLE.totalPages <= 1) return;
-
-  const frag = document.createDocumentFragment();
-  const prev = document.createElement('button');
-  prev.textContent = '« Anterior';
-  prev.disabled = CONFIG_TABLE.currentPage === 1;
-  prev.addEventListener('click', () =>
-    navegarParaPagina(CONFIG_TABLE.currentPage - 1),
-  );
-  frag.appendChild(prev);
-
-  let startPage = Math.max(
-    1,
-    CONFIG_TABLE.currentPage - Math.floor(CONFIG_TABLE.maxRenderedPages / 2),
-  );
-  let endPage = Math.min(
-    CONFIG_TABLE.totalPages,
-    startPage + CONFIG_TABLE.maxRenderedPages - 1,
-  );
-  if (endPage - startPage < CONFIG_TABLE.maxRenderedPages - 1)
-    startPage = Math.max(1, endPage - CONFIG_TABLE.maxRenderedPages + 1);
-
-  for (let p = startPage; p <= endPage; p++) {
-    const btn = document.createElement('button');
-    btn.textContent = p;
-    btn.disabled = p === CONFIG_TABLE.currentPage;
-    btn.addEventListener('click', () => navegarParaPagina(p));
-    frag.appendChild(btn);
-  }
-
-  const next = document.createElement('button');
-  next.textContent = 'Próximo »';
-  next.disabled = CONFIG_TABLE.currentPage === CONFIG_TABLE.totalPages;
-  next.addEventListener('click', () =>
-    navegarParaPagina(CONFIG_TABLE.currentPage + 1),
-  );
-  frag.appendChild(next);
-
-  pc.appendChild(frag);
-}
-
-// Configura eventos de filtro na tabela
-function configurarEventosTabela() {
-  document.addEventListener('click', (event) => {
-    const t = event.target;
-    if (t.classList.contains('celula-clicavel')) {
-      const col = t.dataset.coluna;
-      const val = t.dataset.valor;
-      if (!filtrosAtuais[col] || !filtrosAtuais[col].includes(val))
-        filtrosAtuais[col] = [val];
-      else delete filtrosAtuais[col];
-      aplicarFiltrosTabela();
-      atualizarTodosOsGraficos();
-    }
-    if (t.id === 'resetFiltroTabela') {
-      Object.keys(filtrosAtuais).forEach((k) => delete filtrosAtuais[k]);
-      aplicarFiltrosTabela();
-      atualizarTodosOsGraficos();
-    }
-  });
-}
-
-// Aplica filtros globais na tabela
 function aplicarFiltrosTabela() {
-  if (Object.keys(filtrosAtuais).length === 0)
-    dtDadosFiltrados = [...dtDadosOriginais];
-  else
-    dtDadosFiltrados = dtDadosOriginais.filter((item) =>
-      Object.entries(filtrosAtuais).every(([col, vals]) =>
-        vals.includes(item[col]),
-      ),
-    );
-  atualizarAlturaVirtualTabela();
-  renderizarLinhasVisiveisTabela();
-  atualizarPaginacaoTabela();
-  atualizarInfoTabela();
+  const keys = Object.keys(filtrosAtuais).filter((k) => dtCols.includes(k));
+  dtFilt = keys.length
+    ? dtOrig.filter((item) =>
+        keys.every((k) => filtrosAtuais[k].includes(item[k])),
+      )
+    : [...dtOrig];
 }
-
-// Atualiza informações da tabela
-function atualizarInfoTabela() {
-  const infoCon = dtContainers.infoContainer;
-  if (!infoCon) return;
-  const total = dtDadosOriginais.length;
-  const filt = dtDadosFiltrados.length;
-  infoCon.textContent = Object.keys(filtrosAtuais).length
-    ? `Mostrando ${filt} de ${total} registros>`
-    : `Total: ${total} registros`;
+function atualizarPag() {
+  /* implementação de paginação opcional */
 }
-
-// Adiciona estilos básicos para DataTable
-function adicionarEstilosTabela() {
-  if (document.getElementById('estilos-data-table')) return;
-  const style = document.createElement('style');
-  style.id = 'estilos-data-table';
-  style.textContent = `
-    .table-header table { width: 100%; border-collapse: collapse; }
-    .table-content { position: relative; overflow-y: auto; height: 400px; }
-    .virtual-height { width: 1px; opacity: 0; }
-    #data-table { position: absolute; top: 0; left: 0; width: 100%; border-collapse: collapse; }
-    .celula-clicavel { cursor: pointer; }
-    #pagination { margin-top: 8px; }
-    .table-info { margin-bottom: 8px; }
-  `;
-  document.head.appendChild(style);
+function updInfo() {
+  dtCont.info.textContent =
+    dtFilt.length === dtOrig.length
+      ? `Total: ${dtOrig.length}`
+      : `Mostrando ${dtFilt.length} de ${dtOrig.length}`;
 }
-// ─━━━ FIM: DataTable integrado ━━━━
+function adicionarEstilos() {
+  if (document.getElementById('dt-style')) return;
+  const s = document.createElement('style');
+  s.id = 'dt-style';
+  s.textContent = `.table-content{position:relative;overflow-y:auto;height:300px}`;
+  document.head.append(s);
+}
