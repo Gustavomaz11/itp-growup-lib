@@ -1,34 +1,4 @@
 import Chart from 'chart.js/auto';
-function adicionarEstilosGlobais() {
-  if (document.getElementById('global-grafico-tabela-css')) return;
-  const s = document.createElement('style');
-  s.id = 'global-grafico-tabela-css';
-  s.textContent = `
-    /* … já vinha aqui seu .chart-card, .table-card, .control-bar … */
-
-    /* time-filter-bar */
-    .time-filter-bar {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .time-filter-bar .year-btn,
-    .time-filter-bar select {
-      padding: 6px 10px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #fafafa;
-      cursor: pointer;
-    }
-    .time-filter-bar .year-btn.active {
-      background: #007bff;
-      color: #fff;
-      border-color: #0056b3;
-    }
-  `;
-  document.head.appendChild(s);
-}
 
 /** Estado compartilhado de filtros (chart + table) */
 export const filtrosAtuais = {};
@@ -209,163 +179,47 @@ export function criarGrafico(
   porDuracao = true,
   parametro_busca_fim = null,
 ) {
-  // 1) Injeta estilos (só na 1ª vez)
-  adicionarEstilosGlobais();
-
-  // 2) Detecta campo de data (assume ISO-YYYY-MM-DD)
+  // Cópia imutável dos dados originais
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
-  const isoDate = (v) => /^\d{4}-\d{2}-\d{2}/.test(v);
-  const dateFields = Object.keys(dadosOriginais[0] || {}).filter((k) =>
-    dadosOriginais.every((o) => isoDate(o[k])),
-  );
-  const dataField = dateFields[0] || 'data'; // ajuste se precisar
-
-  // 3) Estado local
   let tipoAtual = tipoInicial;
   let grafico;
   let lastLabels = [];
   let lastValores = [];
 
-  let selectedYear = null;
-  let periodMode = 'Mensal'; // 'Mensal' ou 'Trimestral'
+  const wrapper = ctx.canvas.parentNode; // container do <canvas>
 
-  // 4) Monta card + time-filter-bar
-  const wrapper = ctx.canvas.parentNode;
-  wrapper.classList.add('chart-card');
-
-  // time-filter bar
-  const tfb = document.createElement('div');
-  tfb.classList.add('time-filter-bar');
-  wrapper.prepend(tfb);
-
-  // --- Botão “Todos” + anos dinâmicos ---
-  const anos = Array.from(
-    new Set(dadosOriginais.map((o) => new Date(o[dataField]).getFullYear())),
-  ).sort();
-  const btnTodos = document.createElement('button');
-  btnTodos.textContent = 'Todos';
-  btnTodos.classList.add('year-btn', 'active');
-  tfb.appendChild(btnTodos);
-
-  function atualizarBotoesAno() {
-    tfb.querySelectorAll('.year-btn').forEach((b) => {
-      const ano = b.textContent !== 'Todos' && +b.textContent;
-      b.classList.toggle(
-        'active',
-        (b.textContent === 'Todos' && selectedYear === null) ||
-          ano === selectedYear,
-      );
-    });
-  }
-
-  btnTodos.addEventListener('click', () => {
-    selectedYear = null;
-    atualizarBotoesAno();
-    renderizar();
-  });
-
-  anos.forEach((ano) => {
-    const b = document.createElement('button');
-    b.textContent = String(ano);
-    b.classList.add('year-btn');
-    tfb.appendChild(b);
-    b.addEventListener('click', () => {
-      selectedYear = ano;
-      atualizarBotoesAno();
-      renderizar();
-    });
-  });
-
-  // --- Select de periodicidade ---
-  const selPeriodo = document.createElement('select');
-  ['Mensal', 'Trimestral'].forEach((t) => {
-    const o = document.createElement('option');
-    o.value = t;
-    o.textContent = t;
-    selPeriodo.appendChild(o);
-  });
-  selPeriodo.value = periodMode;
-  selPeriodo.addEventListener('change', () => {
-    periodMode = selPeriodo.value;
-    // ao trocar o modo, reseta seleções específicas
-    selMes.value = '';
-    selTrim.value = '1';
-    renderizar();
-  });
-  tfb.appendChild(selPeriodo);
-
-  // --- Select de Mês ---
-  const selMes = document.createElement('select');
-  const optTodosMes = new Option('Todos', '');
-  selMes.appendChild(optTodosMes);
-  ordemMeses.forEach((m) => {
-    selMes.appendChild(new Option(m, m));
-  });
-  selMes.addEventListener('change', renderizar);
-  tfb.appendChild(selMes);
-
-  // --- Select de Trimestre ---
-  const selTrim = document.createElement('select');
-  ['1º Trimestre', '2º Trimestre', '3º Trimestre'].forEach((t, i) => {
-    const opt = new Option(t, String(i + 1));
-    selTrim.appendChild(opt);
-  });
-  selTrim.addEventListener('change', renderizar);
-  tfb.appendChild(selTrim);
-
-  // ajusta visibilidade inicial
-  function atualizarControlesPeriodo() {
-    selMes.style.display = periodMode === 'Mensal' ? '' : 'none';
-    selTrim.style.display = periodMode === 'Trimestral' ? '' : 'none';
-  }
-  atualizarControlesPeriodo();
-  selPeriodo.addEventListener('change', atualizarControlesPeriodo);
-
-  // 5) Cria resto dos controles (tipo de gráfico + Ver tabela)…
-  const controls = document.createElement('div');
-  controls.classList.add('control-bar');
-  wrapper.insertBefore(controls, ctx.canvas);
-  // … aqui entra exatamente seu select de tipo e botão “Ver tabela” …
-
-  // 6) Função de render / re-render
+  // Função que (re)desenha o gráfico
   function renderizar() {
-    // 6.1) Filtra data por ano/mês/trimestre
-    let base = dadosOriginais.filter((item) => {
-      const d = new Date(item[dataField]);
-      if (selectedYear && d.getFullYear() !== selectedYear) return false;
-      if (periodMode === 'Mensal' && selMes.value) {
-        return ordemMeses[d.getMonth()] === selMes.value;
-      }
-      if (periodMode === 'Trimestral') {
-        const q = +selTrim.value;
-        const m = d.getMonth() + 1;
-        return Math.ceil(m / 3) === q;
-      }
-      return true;
-    });
-
-    // 6.2) Aplica filtrosAtuais (legenda/tabela)
-    const filtrados = getDadosAtuais(base);
-
-    // 6.3) Processa os dados e atualiza o Chart.js
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
-    if (!porDuracao) {
+
+    if (porDuracao === false) {
+      if (!parametro_busca_fim) {
+        throw new Error(
+          'parametro_busca_fim obrigatório quando porDuracao=false',
+        );
+      }
       ({ labels, valores } = processarDuracaoAtendimentos(
-        filtrados,
+        dadosFiltrados,
         parametro_busca,
         parametro_busca_fim,
       ));
     } else {
-      ({ labels, valores } = processarDados(filtrados, parametro_busca));
+      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
     }
+
     lastLabels = labels;
     lastValores = valores;
 
+    // Se já existia, destrói e remove do registro
     if (grafico) {
       grafico.destroy();
-      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
+      const idx = todosOsGraficos.findIndex((g) => g.grafico === grafico);
+      if (idx > -1) todosOsGraficos.splice(idx, 1);
     }
-    grafico = new Chart(ctx, {
+
+    // Configuração do Chart.js
+    const config = {
       type: tipoAtual,
       data: {
         labels,
@@ -374,13 +228,50 @@ export function criarGrafico(
             label: chave,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
+            borderWidth: 1,
           },
         ],
       },
       options: {
-        /* … sua configuração de legend.onClick chamando toggleFiltro … */
+        responsive: true,
+        scales:
+          tipoAtual === 'bar' || tipoAtual === 'line'
+            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+            : undefined,
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0];
+                return chart.data.labels.map((lab, i) => ({
+                  text: lab,
+                  fillStyle: ds.backgroundColor[i],
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                }));
+              },
+            },
+            onClick: (_, item) => {
+              const val = grafico.data.labels[item.index];
+              // aplica o filtro corretamente
+              toggleFiltro(
+                parametro_busca,
+                porDuracao
+                  ? val
+                  : `${parametro_busca}|${parametro_busca_fim}_duracao:${val}`,
+              );
+              atualizarTodosOsGraficos();
+            },
+          },
+        },
       },
-    });
+    };
+
+    // Cria o gráfico
+    grafico = new Chart(ctx, config);
+
+    // Registra para atualizações globais
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
@@ -388,11 +279,131 @@ export function criarGrafico(
       porDuracao,
       parametro_busca_fim,
     });
-    if (callback) callback({ total: filtrados.length });
+
+    // Notifica callback
+    if (callback) {
+      const total = getDadosAtuais(dadosOriginais).length;
+      callback({ total, variacaoTexto: null });
+    }
   }
 
-  // 7) Primeiro render
+  // primeiro render
   renderizar();
+
+  // ——— CONTROLES VISUAIS ———
+  // container de botões
+  const controls = document.createElement('div');
+  Object.assign(controls.style, {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+  });
+
+  // select de tipos
+  const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
+  const sel = document.createElement('select');
+  Object.assign(sel.style, {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    cursor: 'pointer',
+  });
+  tipos.forEach((t) => {
+    const o = document.createElement('option');
+    o.value = t;
+    o.text = t.charAt(0).toUpperCase() + t.slice(1);
+    if (t === tipoAtual) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', () => {
+    tipoAtual = sel.value;
+    renderizar();
+  });
+  controls.appendChild(sel);
+
+  // botão de alternar tabela
+  const btn = document.createElement('button');
+  btn.textContent = 'Ver tabela';
+  Object.assign(btn.style, {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    border: '1px solid #ccc',
+    cursor: 'pointer',
+    background: '#f9f9f9',
+  });
+  controls.appendChild(btn);
+
+  // insere os controles antes do canvas
+  wrapper.insertBefore(controls, ctx.canvas);
+
+  // container da tabela (inicialmente escondido)
+  const tableContainer = document.createElement('div');
+  tableContainer.style.display = 'none';
+  wrapper.appendChild(tableContainer);
+
+  // estado de visibilidade
+  let tabelaVisivel = false;
+
+  btn.addEventListener('click', () => {
+    tabelaVisivel = !tabelaVisivel;
+
+    if (tabelaVisivel) {
+      // esconder gráfico, mostrar tabela
+      ctx.canvas.style.display = 'none';
+      tableContainer.style.display = 'block';
+      btn.textContent = 'Ver gráfico';
+
+      // popula a tabela com última labels/valores
+      tableContainer.innerHTML = '';
+      const tbl = document.createElement('table');
+      Object.assign(tbl.style, {
+        width: '100%',
+        borderCollapse: 'collapse',
+      });
+
+      // cabeçalho
+      const thead = document.createElement('thead');
+      const thr = document.createElement('tr');
+      [parametro_busca, 'Valor'].forEach((h) => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        Object.assign(th.style, {
+          border: '1px solid #ddd',
+          padding: '8px',
+          background: '#f5f5f5',
+          textAlign: 'left',
+        });
+        thr.appendChild(th);
+      });
+      thead.appendChild(thr);
+      tbl.appendChild(thead);
+
+      // corpo
+      const tb = document.createElement('tbody');
+      lastLabels.forEach((lab, i) => {
+        const tr = document.createElement('tr');
+        [lab, lastValores[i]].forEach((txt) => {
+          const td = document.createElement('td');
+          td.textContent = txt;
+          Object.assign(td.style, {
+            border: '1px solid #ddd',
+            padding: '8px',
+          });
+          tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+
+      tableContainer.appendChild(tbl);
+    } else {
+      // mostrar gráfico de novo
+      tableContainer.style.display = 'none';
+      ctx.canvas.style.display = 'block';
+      btn.textContent = 'Ver tabela';
+    }
+  });
 }
 
 function toggleFiltro(parametro, valor) {
