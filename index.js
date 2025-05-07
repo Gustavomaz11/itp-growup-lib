@@ -187,71 +187,96 @@ export function criarGrafico(
   let lastValores = [];
 
   const wrapper = ctx.canvas.parentNode; // container do <canvas>
-  const periodDiv = document.createElement('div');
-  Object.assign(periodDiv.style, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '8px',
-  });
 
-  // 1) Botões de ANO
-  const anos = Array.from(
-    new Set(dadosOriginais.map((item) => item[parametro_busca].slice(0, 4))),
+  //
+  // ——— CONTROLES DE PERÍODO (ANO / MÊS / TRIMESTRE) ———
+  //
+
+  // 1) Detecta automaticamente o campo de data no JSON
+  const dateField = Object.keys(dadosOriginais[0] || {}).find((field) =>
+    dadosOriginais.every(
+      (item) =>
+        typeof item[field] === 'string' &&
+        /^\d{4}-\d{2}-\d{2}/.test(item[field]),
+    ),
   );
-  anos.forEach((ano) => {
-    const btn = document.createElement('button');
-    btn.textContent = ano;
-    btn.style.cursor = 'pointer';
-    btn.addEventListener('click', () => {
-      // limpa só filtros de ano anteriores
-      delete filtrosAtuais[`${parametro_busca}_ano`];
-      filtrosAtuais[`${parametro_busca}_ano`] = [ano];
+
+  if (dateField) {
+    const periodDiv = document.createElement('div');
+    Object.assign(periodDiv.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      marginBottom: '8px',
+    });
+
+    // 1.1) Botão "Todos" para resetar filtro de ano
+    const btnAll = document.createElement('button');
+    btnAll.textContent = 'Todos';
+    btnAll.style.cursor = 'pointer';
+    btnAll.addEventListener('click', () => {
+      delete filtrosAtuais[`${dateField}_ano`];
       atualizarTodosOsGraficos();
     });
-    periodDiv.appendChild(btn);
-  });
+    periodDiv.appendChild(btnAll);
 
-  // 2) Select MENSAL
-  const selMes = document.createElement('select');
-  const optAll = new Option('Todos', '');
-  selMes.appendChild(optAll);
-  ordemMeses.forEach((mes) => selMes.appendChild(new Option(mes, mes)));
-  selMes.addEventListener('change', (e) => {
-    const val = e.target.value;
-    if (!val) delete filtrosAtuais[parametro_busca];
-    else filtrosAtuais[parametro_busca] = [val];
-    atualizarTodosOsGraficos();
-  });
-  periodDiv.appendChild(selMes);
+    // 1.2) Botões de ANO dinamicamente extraídos do JSON
+    const anos = Array.from(
+      new Set(dadosOriginais.map((item) => item[dateField].slice(0, 4))),
+    );
+    anos.forEach((ano) => {
+      const btn = document.createElement('button');
+      btn.textContent = ano;
+      btn.style.cursor = 'pointer';
+      btn.addEventListener('click', () => {
+        delete filtrosAtuais[`${dateField}_ano`];
+        filtrosAtuais[`${dateField}_ano`] = [ano];
+        atualizarTodosOsGraficos();
+      });
+      periodDiv.appendChild(btn);
+    });
 
-  // 3) Select TRIMESTRAL
-  const selTri = document.createElement('select');
-  selTri.appendChild(new Option('Trimestre', ''));
-  const quarters = [
-    ['1º', ['Janeiro', 'Fevereiro', 'Março']],
-    ['2º', ['Abril', 'Maio', 'Junho']],
-    ['3º', ['Julho', 'Agosto', 'Setembro']],
-    ['4º', ['Outubro', 'Novembro', 'Dezembro']],
-  ];
-  quarters.forEach(([label, meses]) => {
-    const opt = new Option(label, label);
-    // guardo meses em data-atributo
-    opt.dataset.meses = meses.join(',');
-    selTri.appendChild(opt);
-  });
-  selTri.addEventListener('change', (e) => {
-    const { meses } = e.target.selectedOptions[0].dataset;
-    if (!meses) delete filtrosAtuais[parametro_busca];
-    else filtrosAtuais[parametro_busca] = meses.split(',');
-    atualizarTodosOsGraficos();
-  });
-  periodDiv.appendChild(selTri);
+    // 2) Select MENSAL (mantém sua lógica original)
+    const selMes = document.createElement('select');
+    selMes.appendChild(new Option('Todos meses', ''));
+    ordemMeses.forEach((mes) => selMes.appendChild(new Option(mes, mes)));
+    selMes.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (!val) delete filtrosAtuais[parametro_busca];
+      else filtrosAtuais[parametro_busca] = [val];
+      atualizarTodosOsGraficos();
+    });
+    periodDiv.appendChild(selMes);
 
-  // coloca tudo antes dos controles já existentes
-  wrapper.insertBefore(periodDiv, wrapper.firstChild);
+    // 3) Select TRIMESTRAL (mantém sua lógica original)
+    const selTri = document.createElement('select');
+    selTri.appendChild(new Option('Trimestre', ''));
+    const quarters = [
+      ['1º', ['Janeiro', 'Fevereiro', 'Março']],
+      ['2º', ['Abril', 'Maio', 'Junho']],
+      ['3º', ['Julho', 'Agosto', 'Setembro']],
+      ['4º', ['Outubro', 'Novembro', 'Dezembro']],
+    ];
+    quarters.forEach(([label, meses]) => {
+      const opt = new Option(label, label);
+      opt.dataset.meses = meses.join(',');
+      selTri.appendChild(opt);
+    });
+    selTri.addEventListener('change', (e) => {
+      const meses = e.target.selectedOptions[0].dataset.meses;
+      if (!meses) delete filtrosAtuais[parametro_busca];
+      else filtrosAtuais[parametro_busca] = meses.split(',');
+      atualizarTodosOsGraficos();
+    });
+    periodDiv.appendChild(selTri);
 
-  // Função que (re)desenha o gráfico
+    // Insere os controles de período antes de tudo
+    wrapper.insertBefore(periodDiv, wrapper.firstChild);
+  }
+
+  //
+  // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
+  //
   function renderizar() {
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
@@ -317,7 +342,6 @@ export function criarGrafico(
             },
             onClick: (_, item) => {
               const val = grafico.data.labels[item.index];
-              // aplica o filtro corretamente
               toggleFiltro(
                 parametro_busca,
                 porDuracao
@@ -331,10 +355,8 @@ export function criarGrafico(
       },
     };
 
-    // Cria o gráfico
+    // Cria e registra o gráfico
     grafico = new Chart(ctx, config);
-
-    // Registra para atualizações globais
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
@@ -353,8 +375,9 @@ export function criarGrafico(
   // primeiro render
   renderizar();
 
-  // ——— CONTROLES VISUAIS ———
-  // container de botões
+  //
+  // ——— CONTROLES VISUAIS (tipo de gráfico e tabela) ———
+  //
   const controls = document.createElement('div');
   Object.assign(controls.style, {
     display: 'flex',
@@ -396,8 +419,6 @@ export function criarGrafico(
     background: '#f9f9f9',
   });
   controls.appendChild(btn);
-
-  // insere os controles antes do canvas
   wrapper.insertBefore(controls, ctx.canvas);
 
   // container da tabela (inicialmente escondido)
@@ -405,27 +426,21 @@ export function criarGrafico(
   tableContainer.style.display = 'none';
   wrapper.appendChild(tableContainer);
 
-  // estado de visibilidade
+  // estado de visibilidade da tabela
   let tabelaVisivel = false;
-
   btn.addEventListener('click', () => {
     tabelaVisivel = !tabelaVisivel;
-
     if (tabelaVisivel) {
-      // esconder gráfico, mostrar tabela
       ctx.canvas.style.display = 'none';
       tableContainer.style.display = 'block';
       btn.textContent = 'Ver gráfico';
-
-      // popula a tabela com última labels/valores
+      // monta tabela com lastLabels / lastValores
       tableContainer.innerHTML = '';
       const tbl = document.createElement('table');
       Object.assign(tbl.style, {
         width: '100%',
         borderCollapse: 'collapse',
       });
-
-      // cabeçalho
       const thead = document.createElement('thead');
       const thr = document.createElement('tr');
       [parametro_busca, 'Valor'].forEach((h) => {
@@ -441,8 +456,6 @@ export function criarGrafico(
       });
       thead.appendChild(thr);
       tbl.appendChild(thead);
-
-      // corpo
       const tb = document.createElement('tbody');
       lastLabels.forEach((lab, i) => {
         const tr = document.createElement('tr');
@@ -458,10 +471,8 @@ export function criarGrafico(
         tb.appendChild(tr);
       });
       tbl.appendChild(tb);
-
       tableContainer.appendChild(tbl);
     } else {
-      // mostrar gráfico de novo
       tableContainer.style.display = 'none';
       ctx.canvas.style.display = 'block';
       btn.textContent = 'Ver tabela';
