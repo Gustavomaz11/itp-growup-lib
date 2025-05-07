@@ -179,26 +179,20 @@ export function criarGrafico(
   porDuracao = true,
   parametro_busca_fim = null,
 ) {
-  // Cópia imutável dos dados originais
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   let tipoAtual = tipoInicial;
   let grafico;
-  let lastLabels = [];
-  let lastValores = [];
+  let tabelaVisivel = false;
 
-  const wrapper = ctx.canvas.parentNode; // container do <canvas>
+  const wrapper = ctx.canvas.parentNode;
 
-  // Função que (re)desenha o gráfico
+  // 1) render do chart
   function renderizar() {
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
-
     if (porDuracao === false) {
-      if (!parametro_busca_fim) {
-        throw new Error(
-          'parametro_busca_fim obrigatório quando porDuracao=false',
-        );
-      }
+      if (!parametro_busca_fim)
+        throw new Error('parametro_busca_fim obrigatório');
       ({ labels, valores } = processarDuracaoAtendimentos(
         dadosFiltrados,
         parametro_busca,
@@ -208,18 +202,12 @@ export function criarGrafico(
       ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
     }
 
-    lastLabels = labels;
-    lastValores = valores;
-
-    // Se já existia, destrói e remove do registro
     if (grafico) {
       grafico.destroy();
-      const idx = todosOsGraficos.findIndex((g) => g.grafico === grafico);
-      if (idx > -1) todosOsGraficos.splice(idx, 1);
+      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
     }
 
-    // Configuração do Chart.js
-    const config = {
+    grafico = new Chart(ctx, {
       type: tipoAtual,
       data: {
         labels,
@@ -228,7 +216,6 @@ export function criarGrafico(
             label: chave,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
-            borderWidth: 1,
           },
         ],
       },
@@ -240,38 +227,20 @@ export function criarGrafico(
             : undefined,
         plugins: {
           legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((lab, i) => ({
-                  text: lab,
-                  fillStyle: ds.backgroundColor[i],
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
-              },
-            },
             onClick: (_, item) => {
               const val = grafico.data.labels[item.index];
-              // aplica o filtro corretamente
               toggleFiltro(
                 parametro_busca,
                 porDuracao
                   ? val
                   : `${parametro_busca}|${parametro_busca_fim}_duracao:${val}`,
               );
-              atualizarTodosOsGraficos();
             },
           },
         },
       },
-    };
+    });
 
-    // Cria o gráfico
-    grafico = new Chart(ctx, config);
-
-    // Registra para atualizações globais
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
@@ -279,40 +248,87 @@ export function criarGrafico(
       porDuracao,
       parametro_busca_fim,
     });
-
-    // Notifica callback
-    if (callback) {
-      const total = getDadosAtuais(dadosOriginais).length;
-      callback({ total, variacaoTexto: null });
-    }
+    if (callback)
+      callback({
+        total: getDadosAtuais(dadosOriginais).length,
+        variacaoTexto: null,
+      });
   }
 
-  // primeiro render
-  renderizar();
+  // 2) render da tabela
+  const tableContainer = document.createElement('div');
+  tableContainer.style.display = 'none';
+  wrapper.appendChild(tableContainer);
 
-  // ——— CONTROLES VISUAIS ———
-  // container de botões
-  const controls = document.createElement('div');
-  Object.assign(controls.style, {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '8px',
+  function renderTabela() {
+    // mesma lógica de filtro + processamento
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    let labels, valores;
+    if (porDuracao === false) {
+      ({ labels, valores } = processarDuracaoAtendimentos(
+        dadosFiltrados,
+        parametro_busca,
+        parametro_busca_fim,
+      ));
+    } else {
+      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
+    }
+
+    // monta tabela
+    tableContainer.innerHTML = '';
+    const tbl = document.createElement('table');
+    tbl.style.width = '100%';
+    tbl.style.borderCollapse = 'collapse';
+
+    const thead = document.createElement('thead');
+    const thr = document.createElement('tr');
+    [parametro_busca, 'Valor'].forEach((h) => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      Object.assign(th.style, {
+        border: '1px solid #ddd',
+        padding: '8px',
+        background: '#f5f5f5',
+      });
+      thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    tbl.appendChild(thead);
+
+    const tb = document.createElement('tbody');
+    labels.forEach((lab, i) => {
+      const tr = document.createElement('tr');
+      [lab, valores[i]].forEach((txt) => {
+        const td = document.createElement('td');
+        td.textContent = txt;
+        Object.assign(td.style, { border: '1px solid #ddd', padding: '8px' });
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    tableContainer.appendChild(tbl);
+  }
+
+  // 3) registro da tabela para reatividade
+  tabelaInstances.push({
+    isVisible: () => tabelaVisivel,
+    render: renderTabela,
   });
+
+  // 4) controles (select + botão)
+  const controls = document.createElement('div');
+  controls.style.display = 'flex';
+  controls.style.gap = '8px';
+  controls.style.marginBottom = '8px';
+  wrapper.insertBefore(controls, ctx.canvas);
 
   // select de tipos
-  const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
   const sel = document.createElement('select');
-  Object.assign(sel.style, {
-    padding: '4px 8px',
-    borderRadius: '4px',
-    border: '1px solid #ccc',
-    cursor: 'pointer',
-  });
-  tipos.forEach((t) => {
+  ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].forEach((t) => {
     const o = document.createElement('option');
     o.value = t;
-    o.text = t.charAt(0).toUpperCase() + t.slice(1);
+    o.textContent = t;
     if (t === tipoAtual) o.selected = true;
     sel.appendChild(o);
   });
@@ -322,87 +338,31 @@ export function criarGrafico(
   });
   controls.appendChild(sel);
 
-  // botão de alternar tabela
+  // botão ver tabela
   const btn = document.createElement('button');
   btn.textContent = 'Ver tabela';
-  Object.assign(btn.style, {
-    padding: '4px 8px',
-    borderRadius: '4px',
-    border: '1px solid #ccc',
-    cursor: 'pointer',
-    background: '#f9f9f9',
-  });
   controls.appendChild(btn);
-
-  // insere os controles antes do canvas
-  wrapper.insertBefore(controls, ctx.canvas);
-
-  // container da tabela (inicialmente escondido)
-  const tableContainer = document.createElement('div');
-  tableContainer.style.display = 'none';
-  wrapper.appendChild(tableContainer);
-
-  // estado de visibilidade
-  let tabelaVisivel = false;
-
   btn.addEventListener('click', () => {
     tabelaVisivel = !tabelaVisivel;
-
     if (tabelaVisivel) {
-      // esconder gráfico, mostrar tabela
       ctx.canvas.style.display = 'none';
       tableContainer.style.display = 'block';
       btn.textContent = 'Ver gráfico';
-
-      // popula a tabela com última labels/valores
-      tableContainer.innerHTML = '';
-      const tbl = document.createElement('table');
-      Object.assign(tbl.style, {
-        width: '100%',
-        borderCollapse: 'collapse',
-      });
-
-      // cabeçalho
-      const thead = document.createElement('thead');
-      const thr = document.createElement('tr');
-      [parametro_busca, 'Valor'].forEach((h) => {
-        const th = document.createElement('th');
-        th.textContent = h;
-        Object.assign(th.style, {
-          border: '1px solid #ddd',
-          padding: '8px',
-          background: '#f5f5f5',
-          textAlign: 'left',
-        });
-        thr.appendChild(th);
-      });
-      thead.appendChild(thr);
-      tbl.appendChild(thead);
-
-      // corpo
-      const tb = document.createElement('tbody');
-      lastLabels.forEach((lab, i) => {
-        const tr = document.createElement('tr');
-        [lab, lastValores[i]].forEach((txt) => {
-          const td = document.createElement('td');
-          td.textContent = txt;
-          Object.assign(td.style, {
-            border: '1px solid #ddd',
-            padding: '8px',
-          });
-          tr.appendChild(td);
-        });
-        tb.appendChild(tr);
-      });
-      tbl.appendChild(tb);
-
-      tableContainer.appendChild(tbl);
+      renderTabela();
     } else {
-      // mostrar gráfico de novo
       tableContainer.style.display = 'none';
       ctx.canvas.style.display = 'block';
       btn.textContent = 'Ver tabela';
     }
+  });
+
+  // execução inicial
+  renderizar();
+}
+
+function atualizarTabelasReativas() {
+  tabelaInstances.forEach(({ isVisible, render }) => {
+    if (isVisible()) render();
   });
 }
 
@@ -410,37 +370,35 @@ function toggleFiltro(parametro, valor) {
   if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
   const idx = filtrosAtuais[parametro].indexOf(valor);
   if (idx === -1) filtrosAtuais[parametro].push(valor);
-  else {
-    filtrosAtuais[parametro].splice(idx, 1);
-    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
-  }
+  else filtrosAtuais[parametro].splice(idx, 1);
+  if (filtrosAtuais[parametro]?.length === 0) delete filtrosAtuais[parametro];
 
-  // atualiza tudo
   atualizarTodosOsGraficos();
-  atualizarTodasAsTabelas();
+  atualizarTabelasReativas();
 }
 
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach((entry) => {
-    const {
+  todosOsGraficos.forEach(
+    ({
       grafico,
       dadosOriginais,
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
-    } = entry;
-    const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    const { labels, valores } = porDuracao
-      ? processarDados(dadosFiltrados, parametro_busca)
-      : processarDuracaoAtendimentos(
-          dadosFiltrados,
-          parametro_busca,
-          parametro_busca_fim,
-        );
-    grafico.data.labels = labels;
-    grafico.data.datasets[0].data = valores;
-    grafico.update();
-  });
+    }) => {
+      const dadosFiltrados = getDadosAtuais(dadosOriginais);
+      const { labels, valores } = porDuracao
+        ? processarDados(dadosFiltrados, parametro_busca)
+        : processarDuracaoAtendimentos(
+            dadosFiltrados,
+            parametro_busca,
+            parametro_busca_fim,
+          );
+      grafico.data.labels = labels;
+      grafico.data.datasets[0].data = valores;
+      grafico.update();
+    },
+  );
 }
 
 // Se precisar de botões de mês na interface, mantém igual
