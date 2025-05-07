@@ -236,21 +236,24 @@ export function criarGrafico(
       periodDiv.appendChild(btn);
     });
 
-    // 2) Select MENSAL (mantém sua lógica original)
+    // 2) Select MENSAL (usa dateField e respeita filtro de ano)
     const selMes = document.createElement('select');
     selMes.appendChild(new Option('Todos meses', ''));
     ordemMeses.forEach((mes) => selMes.appendChild(new Option(mes, mes)));
     selMes.addEventListener('change', (e) => {
       const val = e.target.value;
-      if (!val) delete filtrosAtuais[parametro_busca];
-      else filtrosAtuais[parametro_busca] = [val];
+      if (!val) {
+        delete filtrosAtuais[dateField];
+      } else {
+        filtrosAtuais[dateField] = [val];
+      }
       atualizarTodosOsGraficos();
     });
     periodDiv.appendChild(selMes);
 
-    // 3) Select TRIMESTRAL (mantém sua lógica original)
+    // 3) Select TRIMESTRAL (usa dateField e respeita filtro de ano)
     const selTri = document.createElement('select');
-    selTri.appendChild(new Option('Trimestre', ''));
+    selTri.appendChild(new Option('Todos trimestres', ''));
     const quarters = [
       ['1º', ['Janeiro', 'Fevereiro', 'Março']],
       ['2º', ['Abril', 'Maio', 'Junho']],
@@ -264,13 +267,16 @@ export function criarGrafico(
     });
     selTri.addEventListener('change', (e) => {
       const meses = e.target.selectedOptions[0].dataset.meses;
-      if (!meses) delete filtrosAtuais[parametro_busca];
-      else filtrosAtuais[parametro_busca] = meses.split(',');
+      if (!meses) {
+        delete filtrosAtuais[dateField];
+      } else {
+        filtrosAtuais[dateField] = meses.split(',');
+      }
       atualizarTodosOsGraficos();
     });
     periodDiv.appendChild(selTri);
 
-    // Insere os controles de período antes de tudo
+    // Insere os controles de período no topo
     wrapper.insertBefore(periodDiv, wrapper.firstChild);
   }
 
@@ -434,7 +440,6 @@ export function criarGrafico(
       ctx.canvas.style.display = 'none';
       tableContainer.style.display = 'block';
       btn.textContent = 'Ver gráfico';
-      // monta tabela com lastLabels / lastValores
       tableContainer.innerHTML = '';
       const tbl = document.createElement('table');
       Object.assign(tbl.style, {
