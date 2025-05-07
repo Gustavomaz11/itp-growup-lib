@@ -9,6 +9,8 @@ const todasAsTabelas = [];
 /** Armazena todas as instâncias de gráfico (já existe) */
 let todosOsGraficos = [];
 
+const tabelaInstances = [];
+
 // Ordem fixa de meses para garantir Janeiro→Dezembro
 const ordemMeses = [
   'Janeiro',
