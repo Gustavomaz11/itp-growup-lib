@@ -1,70 +1,13 @@
 import Chart from 'chart.js/auto';
-function adicionarEstilosGlobais() {
-  if (document.getElementById('global-grafico-tabela-css')) return;
-  const style = document.createElement('style');
-  style.id = 'global-grafico-tabela-css';
-  style.textContent = `
-    /* Card para gráficos */
-    .chart-card {
-      background: #fff;
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      margin-bottom: 24px;
-    }
-    /* Barra de controles */
-    .control-bar {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .control-bar select {
-      padding: 6px 10px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #fafafa;
-      cursor: pointer;
-    }
-    .control-bar button {
-      padding: 6px 12px;
-      border-radius: 4px;
-      border: none;
-      background: #007bff;
-      color: #fff;
-      cursor: pointer;
-    }
-    .control-bar button:hover {
-      background: #0056b3;
-    }
-    /* Card para tabelas */
-    .table-card {
-      background: #fff;
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      margin-top: 16px;
-    }
-    .table-card table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .table-card th,
-    .table-card td {
-      border: 1px solid #ddd;
-      padding: 8px;
-      text-align: left;
-    }
-    .table-card th {
-      background: #f5f5f5;
-    }
-  `;
-  document.head.appendChild(style);
-}
+
+/** Estado compartilhado de filtros (chart + table) */
+export const filtrosAtuais = {};
+
+/** Armazena todas as instâncias de tabela criadas */
 const todasAsTabelas = [];
-const filtrosAtuais = {};
+
+/** Armazena todas as instâncias de gráfico (já existe) */
 let todosOsGraficos = [];
-const tabelaInstances = [];
 
 // Ordem fixa de meses para garantir Janeiro→Dezembro
 const ordemMeses = [
@@ -236,29 +179,20 @@ export function criarGrafico(
   porDuracao = true,
   parametro_busca_fim = null,
 ) {
-  // 1) Injeta estilos (só na primeira chamada)
-  adicionarEstilosGlobais();
-
-  // 2) Dados e estado
-  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
+  const dadosOriginais = [...obj];
   let tipoAtual = tipoInicial;
   let grafico;
-  let tabelaVisivel = false;
-  let últimaLabels = [];
-  let últimosValores = [];
 
-  // 3) Configura wrapper como card
-  const wrapper = ctx.canvas.parentNode;
-  wrapper.classList.add('chart-card');
-
-  // 4) Função de render do gráfico
   function renderizar() {
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
-    if (!porDuracao) {
-      if (!parametro_busca_fim)
-        throw new Error('parametro_busca_fim obrigatório');
+    if (porDuracao === false) {
+      if (!parametro_busca_fim) {
+        throw new Error(
+          'parametro_busca_fim obrigatório quando porDuracao=false',
+        );
+      }
       ({ labels, valores } = processarDuracaoAtendimentos(
         dadosFiltrados,
         parametro_busca,
@@ -268,15 +202,7 @@ export function criarGrafico(
       ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
     }
 
-    últimaLabels = labels;
-    últimosValores = valores;
-
-    if (grafico) {
-      grafico.destroy();
-      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
-    }
-
-    grafico = new Chart(ctx, {
+    const config = {
       type: tipoAtual,
       data: {
         labels,
@@ -285,29 +211,57 @@ export function criarGrafico(
             label: chave,
             data: valores,
             backgroundColor: backgroundColor.slice(0, labels.length),
+            borderWidth: 1,
           },
         ],
       },
       options: {
-        responsive: true,
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0];
+                return chart.data.labels.map((lab, i) => ({
+                  text: lab,
+                  fillStyle: ds.backgroundColor[i],
+                  hidden: !chart.getDataVisibility(i),
+                  index: i,
+                }));
+              },
+            },
+            onClick: (_, item) => {
+              const val = grafico.data.labels[item.index];
+              if (porDuracao === false) {
+                // usa chave composta para duração
+                toggleFiltro(
+                  dadosOriginais,
+                  `${parametro_busca}|${parametro_busca_fim}_duracao`,
+                  val,
+                );
+              } else {
+                toggleFiltro(dadosOriginais, parametro_busca, val);
+              }
+              atualizarTodosOsGraficos();
+            },
+          },
+        },
         scales:
           tipoAtual === 'bar' || tipoAtual === 'line'
             ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
             : undefined,
-        plugins: {
-          legend: {
-            onClick: (_, item) => {
-              const val = grafico.data.labels[item.index];
-              toggleFiltro(
-                parametro_busca,
-                porDuracao
-                  ? val
-                  : `${parametro_busca}|${parametro_busca_fim}_duracao:${val}`,
-              );
-            },
-          },
-        },
       },
+    };
+
+    if (grafico) {
+      grafico.destroy();
+      todosOsGraficos = todosOsGraficos.filter((g) => g.grafico !== grafico);
+    }
+
+    grafico = new Chart(ctx, config);
+    calcularTotal(dadosOriginais, (total) => {
+      grafico.total = total;
+      if (callback) callback({ total, variacaoTexto: null });
     });
 
     todosOsGraficos.push({
@@ -317,131 +271,63 @@ export function criarGrafico(
       porDuracao,
       parametro_busca_fim,
     });
-
-    if (callback) callback({ total: getDadosAtuais(dadosOriginais).length });
   }
 
-  // 5) Container de tabela (invisível inicialmente)
-  const tableContainer = document.createElement('div');
-  tableContainer.classList.add('table-card');
-  tableContainer.style.display = 'none';
-  wrapper.appendChild(tableContainer);
+  renderizar();
 
-  // 6) Função de render da tabela
-  function renderTabela() {
-    tableContainer.innerHTML = '';
-    const tbl = document.createElement('table');
-    const thead = document.createElement('thead');
-    const thr = document.createElement('tr');
-    [parametro_busca, 'Valor'].forEach((h) => {
-      const th = document.createElement('th');
-      th.textContent = h;
-      thr.appendChild(th);
-    });
-    thead.appendChild(thr);
-    tbl.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    últimaLabels.forEach((lab, i) => {
-      const tr = document.createElement('tr');
-      [lab, últimosValores[i]].forEach((txt) => {
-        const td = document.createElement('td');
-        td.textContent = txt;
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    tableContainer.appendChild(tbl);
-  }
-
-  // 7) Registra a tabela para reatividade
-  tabelaInstances.push({
-    isVisible: () => tabelaVisivel,
-    render: renderTabela,
-  });
-
-  // 8) Barra de controles
-  const controls = document.createElement('div');
-  controls.classList.add('control-bar');
-  wrapper.insertBefore(controls, ctx.canvas);
-
-  //    a) select de tipos
+  // seletor de tipo
+  const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
   const sel = document.createElement('select');
-  ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'].forEach((t) => {
+  sel.style.margin = '8px';
+  tipos.forEach((t) => {
     const o = document.createElement('option');
     o.value = t;
-    o.textContent = t.charAt(0).toUpperCase() + t.slice(1);
-    if (t === tipoInicial) o.selected = true;
+    o.text = t.charAt(0).toUpperCase() + t.slice(1);
+    if (t === tipoAtual) o.selected = true;
     sel.appendChild(o);
   });
   sel.addEventListener('change', () => {
     tipoAtual = sel.value;
     renderizar();
   });
-  controls.appendChild(sel);
-
-  //    b) botão alterna gráfico ↔ tabela
-  const btn = document.createElement('button');
-  btn.textContent = 'Ver tabela';
-  controls.appendChild(btn);
-  btn.addEventListener('click', () => {
-    tabelaVisivel = !tabelaVisivel;
-    if (tabelaVisivel) {
-      ctx.canvas.style.display = 'none';
-      tableContainer.style.display = 'block';
-      btn.textContent = 'Ver gráfico';
-      renderTabela();
-    } else {
-      tableContainer.style.display = 'none';
-      ctx.canvas.style.display = 'block';
-      btn.textContent = 'Ver tabela';
-    }
-  });
-
-  // 9) Primeiro render
-  renderizar();
-}
-
-function atualizarTabelasReativas() {
-  tabelaInstances.forEach(({ isVisible, render }) => {
-    if (isVisible()) render();
-  });
+  ctx.canvas.parentNode.insertBefore(sel, ctx.canvas.nextSibling);
 }
 
 function toggleFiltro(parametro, valor) {
   if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
   const idx = filtrosAtuais[parametro].indexOf(valor);
   if (idx === -1) filtrosAtuais[parametro].push(valor);
-  else filtrosAtuais[parametro].splice(idx, 1);
-  if (!filtrosAtuais[parametro]?.length) delete filtrosAtuais[parametro];
+  else {
+    filtrosAtuais[parametro].splice(idx, 1);
+    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
+  }
 
+  // atualiza tudo
   atualizarTodosOsGraficos();
-  atualizarTabelasReativas();
+  atualizarTodasAsTabelas();
 }
 
 function atualizarTodosOsGraficos() {
-  todosOsGraficos.forEach(
-    ({
+  todosOsGraficos.forEach((entry) => {
+    const {
       grafico,
       dadosOriginais,
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
-    }) => {
-      const dados = getDadosAtuais(dadosOriginais);
-      const { labels, valores } = porDuracao
-        ? processarDados(dados, parametro_busca)
-        : processarDuracaoAtendimentos(
-            dados,
-            parametro_busca,
-            parametro_busca_fim,
-          );
-      grafico.data.labels = labels;
-      grafico.data.datasets[0].data = valores;
-      grafico.update();
-    },
-  );
+    } = entry;
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    const { labels, valores } = porDuracao
+      ? processarDados(dadosFiltrados, parametro_busca)
+      : processarDuracaoAtendimentos(
+          dadosFiltrados,
+          parametro_busca,
+          parametro_busca_fim,
+        );
+    grafico.data.labels = labels;
+    grafico.data.datasets[0].data = valores;
+    grafico.update();
+  });
 }
 
 // Se precisar de botões de mês na interface, mantém igual
