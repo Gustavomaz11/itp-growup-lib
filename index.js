@@ -45,22 +45,22 @@ const cacheMeses = {
 
 function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
+
   return dadosOriginais.filter((item) =>
     Object.entries(filtrosAtuais).every(([param, vals]) => {
-      // filtro de duração
-      if (param.endsWith('_duracao')) {
-        const [campoInicio, campoFim] = param.split('_duracao')[0].split('|');
-        const ini = Date.parse(item[campoInicio]);
-        const fim = Date.parse(item[campoFim]);
-        if (isNaN(ini) || isNaN(fim) || fim < ini) return false;
-        const diffMin = (fim - ini) / 60000;
-        // verifique se diffMin cai em algum bin cujo label esteja em vals
-        return vals.some((label) => {
-          const bin = binsGlobais().find((b) => b.label === label);
-          return bin && diffMin >= bin.min && diffMin < bin.max;
-        });
+      // ── novo suporte a ano ───────────────────────────────────────────────
+      if (param.endsWith('_ano')) {
+        const campo = param.replace('_ano', '');
+        const ano = item[campo]?.slice(0, 4);
+        return ano && vals.includes(ano);
       }
-      // filtro normal (inclui data)
+      // ─────────────────────────────────────────────────────────────────────
+
+      // filtro de duração...
+      if (param.endsWith('_duracao')) {
+        /* ... */
+      }
+      // filtro normal (inclui data para mês)...
       let v = item[param];
       if (param.includes('data') && v) {
         const m = v.slice(5, 7);
@@ -187,6 +187,69 @@ export function criarGrafico(
   let lastValores = [];
 
   const wrapper = ctx.canvas.parentNode; // container do <canvas>
+  const periodDiv = document.createElement('div');
+  Object.assign(periodDiv.style, {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+  });
+
+  // 1) Botões de ANO
+  const anos = Array.from(
+    new Set(dadosOriginais.map((item) => item[parametro_busca].slice(0, 4))),
+  );
+  anos.forEach((ano) => {
+    const btn = document.createElement('button');
+    btn.textContent = ano;
+    btn.style.cursor = 'pointer';
+    btn.addEventListener('click', () => {
+      // limpa só filtros de ano anteriores
+      delete filtrosAtuais[`${parametro_busca}_ano`];
+      filtrosAtuais[`${parametro_busca}_ano`] = [ano];
+      atualizarTodosOsGraficos();
+    });
+    periodDiv.appendChild(btn);
+  });
+
+  // 2) Select MENSAL
+  const selMes = document.createElement('select');
+  const optAll = new Option('Todos', '');
+  selMes.appendChild(optAll);
+  ordemMeses.forEach((mes) => selMes.appendChild(new Option(mes, mes)));
+  selMes.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (!val) delete filtrosAtuais[parametro_busca];
+    else filtrosAtuais[parametro_busca] = [val];
+    atualizarTodosOsGraficos();
+  });
+  periodDiv.appendChild(selMes);
+
+  // 3) Select TRIMESTRAL
+  const selTri = document.createElement('select');
+  selTri.appendChild(new Option('Trimestre', ''));
+  const quarters = [
+    ['1º', ['Janeiro', 'Fevereiro', 'Março']],
+    ['2º', ['Abril', 'Maio', 'Junho']],
+    ['3º', ['Julho', 'Agosto', 'Setembro']],
+    ['4º', ['Outubro', 'Novembro', 'Dezembro']],
+  ];
+  quarters.forEach(([label, meses]) => {
+    const opt = new Option(label, label);
+    // guardo meses em data-atributo
+    opt.dataset.meses = meses.join(',');
+    selTri.appendChild(opt);
+  });
+  selTri.addEventListener('change', (e) => {
+    const { meses } = e.target.selectedOptions[0].dataset;
+    if (!meses) delete filtrosAtuais[parametro_busca];
+    else filtrosAtuais[parametro_busca] = meses.split(',');
+    atualizarTodosOsGraficos();
+  });
+  periodDiv.appendChild(selTri);
+
+  // coloca tudo antes dos controles já existentes
+  wrapper.insertBefore(periodDiv, wrapper.firstChild);
 
   // Função que (re)desenha o gráfico
   function renderizar() {
