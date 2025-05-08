@@ -817,11 +817,9 @@ async function gerarRelatorio(dadosOriginais) {
     doc.setFontSize(18);
     doc.text('Relatório de Projeções e Resultados', 40, cursorY);
     cursorY += 25;
-
     doc.setDrawColor(0, 0, 0);
     doc.line(40, cursorY, 555, cursorY);
     cursorY += 20;
-
     doc.setFontSize(11);
     doc.text(
       'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
@@ -832,21 +830,39 @@ async function gerarRelatorio(dadosOriginais) {
 
     const entries = todosOsGraficos;
     const total = entries.length;
-    let done = 0;
 
+    // 1) Pré-calcula imagens e estatísticas
+    const tarefas = new Array(total);
     for (let i = 0; i < total; i++) {
       const {
         grafico,
         dadosOriginais: dadosGrafico,
-        parametro_busca: categoryField,
+        parametro_busca: campoCat,
         porDuracao,
-        parametro_busca_fim: endField,
+        parametro_busca_fim: campoFim,
       } = entries[i];
 
-      // 1) Captura rápida do gráfico
+      // captura base64 do gráfico UMA vez
       const imgData = grafico.toBase64Image();
       const imgW = 515;
       const imgH = (grafico.height / grafico.width) * imgW;
+
+      // calcula estatísticas UMA vez
+      const stats = calcularEstatisticasGrafico(
+        dadosGrafico,
+        campoCat,
+        porDuracao,
+        campoFim,
+      );
+
+      tarefas[i] = { grafico, imgData, imgW, imgH, stats };
+    }
+
+    // 2) Gera PDF iterando sobre resultados pré-calculados
+    for (let i = 0; i < total; i++) {
+      const { grafico, imgData, imgW, imgH, stats } = tarefas[i];
+
+      // — Insere imagem
       if (cursorY + imgH > 780) {
         doc.addPage();
         cursorY = 40;
@@ -854,29 +870,22 @@ async function gerarRelatorio(dadosOriginais) {
       doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
       cursorY += imgH + 10;
 
-      // 2) Tabela de valores abaixo de cada gráfico
+      // — Tabela de valores
       const labels = grafico.data.labels;
       const valores = grafico.data.datasets[0].data;
       doc.setFontSize(11);
-      labels.forEach((label, idx) => {
+      for (let j = 0, len = labels.length; j < len; j++) {
         if (cursorY > 780) {
           doc.addPage();
           cursorY = 40;
         }
-        doc.text(`${label}: ${valores[idx]} atendimentos`, 40, cursorY);
+        doc.text(`${labels[j]}: ${valores[j]} atendimentos`, 40, cursorY);
         cursorY += 14;
-      });
+      }
       cursorY += 10;
 
-      // 3) Estatísticas otimizadas
-      const stats = calcularEstatisticasGrafico(
-        dadosGrafico,
-        categoryField,
-        porDuracao,
-        endField,
-      );
-
-      // 3a) Variação anual por categoria
+      // — Estatísticas anual e mensal
+      // 3a) Variação Ano a Ano
       if (cursorY > 760) {
         doc.addPage();
         cursorY = 40;
@@ -888,8 +897,7 @@ async function gerarRelatorio(dadosOriginais) {
         cursorY,
       );
       cursorY += 18;
-
-      stats.statsPorCategoria.forEach((catStat) => {
+      for (const catStat of stats.statsPorCategoria) {
         if (cursorY > 780) {
           doc.addPage();
           cursorY = 40;
@@ -901,10 +909,10 @@ async function gerarRelatorio(dadosOriginais) {
           cursorY,
         );
         cursorY += 14;
-      });
+      }
       cursorY += 20;
 
-      // 3b) Comparativo mês a mês por categoria
+      // 3b) Variação Mês a Mês
       if (cursorY > 760) {
         doc.addPage();
         cursorY = 40;
@@ -916,9 +924,7 @@ async function gerarRelatorio(dadosOriginais) {
         cursorY,
       );
       cursorY += 18;
-
-      stats.statsPorCategoria.forEach((catStat) => {
-        // Nome da categoria
+      for (const catStat of stats.statsPorCategoria) {
         if (cursorY > 780) {
           doc.addPage();
           cursorY = 40;
@@ -926,9 +932,7 @@ async function gerarRelatorio(dadosOriginais) {
         doc.setFontSize(11);
         doc.text(`Categoria ${catStat.categoria}:`, 60, cursorY);
         cursorY += 14;
-
-        // Cada mês
-        catStat.variacaoMeses.forEach((mesStat) => {
+        for (const mesStat of catStat.variacaoMeses) {
           if (cursorY > 780) {
             doc.addPage();
             cursorY = 40;
@@ -939,13 +943,12 @@ async function gerarRelatorio(dadosOriginais) {
             cursorY,
           );
           cursorY += 14;
-        });
+        }
         cursorY += 10;
-      });
+      }
 
-      // 4) Atualiza spinner
-      done++;
-      updateLoadingSpinner(Math.round((done / total) * 100));
+      // — Atualiza spinner
+      updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
     }
 
     doc.save('Relatorio_Visual_Completo.pdf');
