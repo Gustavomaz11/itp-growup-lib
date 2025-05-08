@@ -707,7 +707,18 @@ function adicionarEstilosTabela() {
 }
 
 /**
+ * Função utilitária para humanizar nomes de campos:
+ * ex: "data_solicitacao" → "Data Solicitação"
+ */
+function humanize(str) {
+  return str.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+/**
  * Cria e injeta o botão “Gerar Relatório” no container indicado.
+ * @param {Array<Object>} dadosOriginais – seu array completo de dados.
+ * @param {HTMLElement} containerEl – elemento DOM onde o botão será inserido.
+ * @returns {HTMLButtonElement}
  */
 export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
   const btn = document.createElement('button');
@@ -727,7 +738,8 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
 }
 
 /**
- * Gera o PDF: captura imagens dos gráficos, monta cabeçalho,
+ * Gera o PDF: faz resumo dinâmico de todos os campos,
+ * captura imagens dos gráficos, monta cabeçalho,
  * tabela com colunas dinâmicas e textos “humanos”.
  * @param {Array<Object>} dadosOriginais
  */
@@ -735,7 +747,7 @@ async function gerarRelatorio(dadosOriginais) {
   // 1) Extrai apenas o que está sendo exibido (filtrado ou não)
   const dadosAtuais = getDadosAtuais(dadosOriginais);
 
-  // 2) Instancia o jsPDF direto da importação
+  // 2) Instancia o jsPDF
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
   // ——— Cabeçalho “humano” ———
@@ -744,14 +756,66 @@ async function gerarRelatorio(dadosOriginais) {
   doc.setFontSize(11);
   doc.text(
     'Este documento apresenta os dados conforme visualizados na tela, ' +
-      'incluindo os gráficos e a tabela resultante da filtragem atual.',
+      'incluindo o resumo geral, os gráficos e a tabela resultante da filtragem atual.',
     40,
     70,
     { maxWidth: 515 },
   );
-  doc.text(`Emissão: ${new Date().toLocaleString()}`, 40, 100);
+  doc.text(`Emissão: ${new Date().toLocaleString()}`, 40, 95);
 
-  let cursorY = 130;
+  let cursorY = 125;
+
+  // ——— Resumo dinâmico de todos os campos ———
+  if (dadosAtuais.length) {
+    const keys = Object.keys(dadosAtuais[0]);
+
+    // identifica campo de data para capturar anos
+    const dateKey = keys.find((k) => /data|date/i.test(k)) || keys[0];
+    const anos = Array.from(
+      new Set(dadosAtuais.map((i) => new Date(i[dateKey]).getFullYear())),
+    ).sort();
+    const total = dadosAtuais.length;
+
+    // Para cada campo, decide se é numérico ou categórico
+    const resumos = keys
+      .filter((k) => k !== dateKey)
+      .map((k) => {
+        const valores = dadosAtuais
+          .map((i) => i[k])
+          .filter((v) => v !== null && v !== undefined);
+        const num = valores.map((v) => parseFloat(v)).filter((v) => !isNaN(v));
+        if (num.length === valores.length) {
+          // é numérico → calcula média
+          const media = (num.reduce((a, b) => a + b, 0) / num.length).toFixed(
+            2,
+          );
+          return `Média de ${humanize(k)}: ${media}`;
+        } else {
+          // é categórico → conta ocorrências
+          const counts = valores.reduce((acc, v) => {
+            const vv = String(v);
+            acc[vv] = (acc[vv] || 0) + 1;
+            return acc;
+          }, {});
+          return `${humanize(k)}: ${Object.entries(counts)
+            .map(([val, cnt]) => `${val} (${cnt})`)
+            .join(', ')}`;
+        }
+      });
+
+    const resumoText =
+      `Durante os anos de ${anos[0]} e ${anos[anos.length - 1]}, ` +
+      `foram exibidos ${total} registros. ` +
+      `Resumo por campo: ${resumos.join('; ')}.`;
+
+    doc.setFontSize(12);
+    doc.text(resumoText, 40, cursorY, { maxWidth: 515 });
+    cursorY += thirty; // espaço após o resumo
+  } else {
+    doc.setFontSize(12);
+    doc.text('Nenhum dado a exibir para o resumo.', 40, cursorY);
+    cursorY += 20;
+  }
 
   // ——— Captura de imagens dos gráficos ———
   const canvases = document.querySelectorAll('canvas.meu-grafico');
@@ -772,14 +836,11 @@ async function gerarRelatorio(dadosOriginais) {
   // ——— Tabela com colunas dinâmicas ———
   if (dadosAtuais.length) {
     const keys = Object.keys(dadosAtuais[0]);
-    const colunas = keys.map((k) =>
-      k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-    );
-
+    const colunas = keys.map(humanize);
     const pageWidth = doc.internal.pageSize.getWidth() - 80;
     const larguraCol = pageWidth / colunas.length;
 
-    // Cabeçalho da tabela
+    // cabeçalho da tabela
     doc.setFontSize(10);
     doc.setFillColor(230);
     colunas.forEach((titulo, i) => {
@@ -789,7 +850,7 @@ async function gerarRelatorio(dadosOriginais) {
     });
     cursorY += 25;
 
-    // Linhas de dados
+    // linhas de dados
     dadosAtuais.forEach((item) => {
       if (cursorY > 780) {
         doc.addPage();
@@ -803,7 +864,7 @@ async function gerarRelatorio(dadosOriginais) {
       cursorY += 18;
     });
 
-    // Observação final
+    // observação final
     if (cursorY + 40 < 800) {
       doc.setFontSize(11);
       doc.text(
@@ -814,10 +875,6 @@ async function gerarRelatorio(dadosOriginais) {
         { maxWidth: 515 },
       );
     }
-  } else {
-    // Caso não haja dados
-    doc.setFontSize(12);
-    doc.text('Nenhum dado a exibir com os filtros atuais.', 40, cursorY);
   }
 
   // 3) Gera o blob e abre o PDF em nova aba
