@@ -806,26 +806,23 @@ function humanize(str) {
   return str.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-/**
- * Gera o PDF completo:
- *  • Cabeçalho
- *  • Cada gráfico (html2canvas → imagem)
- *  • Tabela genérica (labels × valores)
- *  • Estatísticas por categoria (ano-a-ano e mês-a-mês) abaixo de cada tabela
- */
 async function gerarRelatorio(dadosOriginais) {
+  // Exibe overlay com spinner e 0%
   showLoadingSpinner();
+
   try {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     let cursorY = 40;
 
-    // — Cabeçalho —
+    // --- Cabeçalho ---
     doc.setFontSize(18);
     doc.text('Relatório de Projeções e Resultados', 40, cursorY);
     cursorY += 25;
+
     doc.setDrawColor(0, 0, 0);
     doc.line(40, cursorY, 555, cursorY);
     cursorY += 20;
+
     doc.setFontSize(11);
     doc.text(
       'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
@@ -834,23 +831,25 @@ async function gerarRelatorio(dadosOriginais) {
     );
     cursorY += 30;
 
-    // — Para cada gráfico na página —
-    const canvases = document.querySelectorAll('canvas');
-    for (let canvas of canvases) {
-      const chart = Chart.getChart(canvas);
-      const labels = chart.data.labels || [];
-      const valores = chart.data.datasets[0].data;
-      const dsLabel = chart.data.datasets[0].label;
+    // Assume que `todosOsGraficos` é um array de objetos:
+    // { grafico, dadosOriginais, parametro_busca, porDuracao, parametro_busca_fim }
+    const entries = todosOsGraficos;
+    const total = entries.length;
+    let done = 0;
 
-      // Cabeçalhos de tabela genéricos
-      const header1 = chart.options.scales?.x?.title?.text || 'Categoria';
-      const header2 = dsLabel ? humanize(dsLabel) : 'Valor';
+    for (let i = 0; i < total; i++) {
+      const {
+        grafico,
+        dadosOriginais: dadosGrafico,
+        parametro_busca: categoryField,
+        porDuracao,
+        parametro_busca_fim: endField,
+      } = entries[i];
 
-      // 1) Renderiza o gráfico como imagem
-      const image = await html2canvas(canvas, { backgroundColor: '#fff' });
-      const imgData = image.toDataURL('image/png');
+      // 1) Captura rápida do gráfico
+      const imgData = grafico.toBase64Image();
       const imgW = 515;
-      const imgH = (image.height * imgW) / image.width;
+      const imgH = (grafico.height / grafico.width) * imgW;
       if (cursorY + imgH > 780) {
         doc.addPage();
         cursorY = 40;
@@ -858,90 +857,66 @@ async function gerarRelatorio(dadosOriginais) {
       doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
       cursorY += imgH + 10;
 
-      // 2) Desenha tabela de labels × valores
-      const tableX = 40;
-      const col1W = imgW * 0.5;
-      const col2W = imgW * 0.5;
-      let tableY = cursorY;
-
-      doc.setFontSize(12);
-      doc.setFillColor(220, 220, 220);
-      doc.rect(tableX, tableY, col1W, 20, 'F');
-      doc.text(header1, tableX + 5, tableY + 14);
-      doc.rect(tableX + col1W, tableY, col2W, 20, 'F');
-      doc.text(header2, tableX + col1W + 5, tableY + 14);
-      tableY += 20;
-
+      // 2) Tabela de valores abaixo de cada gráfico
+      const labels = grafico.data.labels;
+      const valores = grafico.data.datasets[0].data;
       doc.setFontSize(11);
-      for (let i = 0; i < labels.length; i++) {
-        if (tableY + 18 > 780) {
+      labels.forEach((label, idx) => {
+        if (cursorY > 780) {
           doc.addPage();
-          tableY = 40;
+          cursorY = 40;
         }
-        doc.rect(tableX, tableY, col1W, 18);
-        doc.text(String(labels[i]), tableX + 5, tableY + 14);
-        doc.rect(tableX + col1W, tableY, col2W, 18);
-        doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
-        tableY += 18;
+        doc.text(`${label}: ${valores[idx]} atendimentos`, 40, cursorY);
+        cursorY += 14;
+      });
+      cursorY += 10;
+
+      // 3) Estatísticas otimizadas
+      const stats = calcularEstatisticasGrafico(
+        dadosGrafico,
+        categoryField,
+        porDuracao,
+        endField,
+      );
+
+      // 3a) Variação anual
+      if (cursorY > 760) {
+        doc.addPage();
+        cursorY = 40;
       }
+      doc.setFontSize(12);
+      doc.text(
+        `Variação Ano a Ano (${stats.anoAnterior} → ${stats.anoRecente}):`,
+        40,
+        cursorY,
+      );
+      cursorY += 18;
 
-      cursorY = tableY + 25;
-
-      // 3) Estatísticas por categoria
-      const categoryField = chart._parametro_busca || null;
-      if (categoryField) {
-        const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
-          /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
+      // 3b) Por categoria
+      stats.statsPorCategoria.forEach((catStat) => {
+        if (cursorY > 780) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.setFontSize(11);
+        doc.text(
+          `${catStat.categoria}: ${catStat.variacaoAno.toFixed(2)}%`,
+          60,
+          cursorY,
         );
+        cursorY += 14;
+      });
+      cursorY += 20;
 
-        if (dateField) {
-          const stats = calcularEstatisticasGrafico(
-            dadosOriginais,
-            dateField,
-            categoryField,
-          );
-
-          if (cursorY + 16 > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          doc.setFontSize(12);
-          doc.text('Estatísticas por categoria:', 40, cursorY);
-          cursorY += 16;
-
-          doc.setFontSize(11);
-          stats.statsPorCategoria.forEach((cat) => {
-            if (cursorY + 14 > 780) {
-              doc.addPage();
-              cursorY = 40;
-            }
-            doc.text(
-              `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
-              45,
-              cursorY,
-            );
-            cursorY += 14;
-
-            cat.variacaoMeses.forEach(({ mes, variacao }) => {
-              if (cursorY + 12 > 780) {
-                doc.addPage();
-                cursorY = 40;
-              }
-              doc.text(`- ${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
-              cursorY += 12;
-            });
-
-            cursorY += 6;
-          });
-
-          cursorY += 10;
-        }
-      }
+      // 4) Atualiza spinner (% concluído)
+      done++;
+      updateLoadingSpinner(Math.round((done / total) * 100));
     }
 
-    // — Salva o PDF —
-    doc.save('Relatorio_Visual_Completo_Com_Estatisticas.pdf');
+    // 5) Salva o PDF
+    doc.save('Relatorio_Visual_Completo.pdf');
   } finally {
+    // Remove o overlay
     hideLoadingSpinner();
   }
 }
@@ -962,52 +937,57 @@ async function gerarRelatorio(dadosOriginais) {
  *   }>
  * }}
  */
-function calcularEstatisticasGrafico(dados, dateField, categoryField) {
-  // 1) determina anos
+function calcularEstatisticasGrafico(
+  dados,
+  categoryField,
+  porDuracao,
+  endField,
+) {
+  // descarta duração: só usamos dateField + categoryField
+  const dateField = Object.keys(dados[0] || {}).find((f) =>
+    /^\d{4}-\d{2}-\d{2}/.test(dados[0][f]),
+  );
+  if (!dateField) return { statsPorCategoria: [] };
+
+  // 1) pré-compute contagens year|month|category
+  const counts = {};
+  dados.forEach((item) => {
+    const dt = item[dateField];
+    const year = dt.slice(0, 4),
+      month = dt.slice(5, 7),
+      cat = item[categoryField] || '—';
+    const key = `${year}|${month}|${cat}`;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  // 2) reúne anos e categorias
   const anos = Array.from(
-    new Set(dados.map((i) => i[dateField].slice(0, 4))),
+    new Set(Object.keys(counts).map((k) => k.split('|')[0])),
   ).sort();
-  const anoRecente = anos.pop();
-  const anoAnterior = anos.pop() || null;
-  if (!anoAnterior) {
-    return { anoRecente, anoAnterior: null, statsPorCategoria: [] };
-  }
+  const categorias = Array.from(
+    new Set(Object.keys(counts).map((k) => k.split('|')[2])),
+  );
+  const anoRec = anos.pop();
+  const anoAnt = anos.pop();
+  if (!anoAnt)
+    return { anoRecente: anoRec, anoAnterior: null, statsPorCategoria: [] };
 
-  // 2) lista de categorias
-  const categorias = Array.from(new Set(dados.map((i) => i[categoryField])));
-
-  // 3) para cada categoria, calcula variação anual e mensal
+  // 3) calcula stats por categoria
   const statsPorCategoria = categorias.map((cat) => {
-    // totais ano-a-ano
-    const totalRec = dados.filter(
-      (i) => i[dateField].startsWith(anoRecente) && i[categoryField] === cat,
-    ).length;
-    const totalAnt = dados.filter(
-      (i) => i[dateField].startsWith(anoAnterior) && i[categoryField] === cat,
-    ).length;
-    const variacaoAno = totalAnt ? ((totalRec - totalAnt) / totalAnt) * 100 : 0;
-
-    // variação mês-a-mês
+    let totalRec = 0,
+      totalAnt = 0;
     const variacaoMeses = ordemMeses.map((mesNome, idx) => {
-      const m = String(idx + 1).padStart(2, '0');
-      const recMes = dados.filter(
-        (i) =>
-          i[dateField].startsWith(anoRecente) &&
-          i[dateField].slice(5, 7) === m &&
-          i[categoryField] === cat,
-      ).length;
-      const antMes = dados.filter(
-        (i) =>
-          i[dateField].startsWith(anoAnterior) &&
-          i[dateField].slice(5, 7) === m &&
-          i[categoryField] === cat,
-      ).length;
-      const variacao = antMes ? ((recMes - antMes) / antMes) * 100 : 0;
+      const mm = String(idx + 1).padStart(2, '0');
+      const rec = counts[`${anoRec}|${mm}|${cat}`] || 0;
+      const ant = counts[`${anoAnt}|${mm}|${cat}`] || 0;
+      totalRec += rec;
+      totalAnt += ant;
+      const variacao = ant ? ((rec - ant) / ant) * 100 : 0;
       return { mes: mesNome, variacao };
     });
-
+    const variacaoAno = totalAnt ? ((totalRec - totalAnt) / totalAnt) * 100 : 0;
     return { categoria: cat, variacaoAno, variacaoMeses };
   });
 
-  return { anoRecente, anoAnterior, statsPorCategoria };
+  return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
 }
