@@ -741,15 +741,17 @@ function humanize(str) {
 }
 
 /**
- * Gera o PDF completo, com cada gráfico e embaixo uma tabela genérica:
- *  • primeira coluna: o que são os labels (ex: Prioridade, Cliente, Mês…)
- *  • segunda coluna: o que é o dataset (Atendimentos, Média, Tempo…)
+ * Gera o PDF completo:
+ *  • Cabeçalho
+ *  • Gráficos (html2canvas → imagem)
+ *  • Tabela genérica (labels × valores)
+ *  • Estatísticas ano-a-ano e mês-a-mês abaixo de cada tabela
  */
 async function gerarRelatorio(dadosOriginais) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   let cursorY = 40;
 
-  // --- Cabeçalho ---
+  // — Cabeçalho —
   doc.setFontSize(18);
   doc.text('Relatório de Projeções e Resultados', 40, cursorY);
   cursorY += 25;
@@ -764,19 +766,19 @@ async function gerarRelatorio(dadosOriginais) {
   );
   cursorY += 30;
 
-  // --- Para cada canvas (Chart.js) na página ---
+  // — Para cada gráfico na página —
   const canvases = document.querySelectorAll('canvas');
   for (let canvas of canvases) {
-    const chart = Chart.getChart(canvas); // pega a instância
-    const labels = chart.data.labels || []; // rótulos do eixo X
-    const valores = chart.data.datasets[0].data; // valores do dataset
-    const dsLabel = chart.data.datasets[0].label; // nome do dataset
+    const chart = Chart.getChart(canvas);
+    const labels = chart.data.labels || [];
+    const valores = chart.data.datasets[0].data;
+    const dsLabel = chart.data.datasets[0].label;
 
-    // cabeçalhos dinâmicos
-    const header1 = chart.options.scales?.x?.title?.text || 'Categoria'; // ex: "Prioridade", "Cliente", "Mês"…
-    const header2 = dsLabel ? humanize(dsLabel) : 'Valor'; // ex: "Atendimentos", "Média", "Tempo"…
+    // cabeçalhos de tabela genéricos
+    const header1 = chart.options.scales?.x?.title?.text || 'Categoria';
+    const header2 = dsLabel ? humanize(dsLabel) : 'Valor';
 
-    // renderiza imagem do gráfico
+    // 1) renderiza gráfico como imagem
     const image = await html2canvas(canvas, { backgroundColor: '#fff' });
     const imgData = image.toDataURL('image/png');
     const imgW = 515;
@@ -788,13 +790,12 @@ async function gerarRelatorio(dadosOriginais) {
     doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
     cursorY += imgH + 10;
 
-    // prepara dimensões da tabela
+    // 2) desenha tabela de labels × valores
     const tableX = 40;
     const col1W = imgW * 0.5;
     const col2W = imgW * 0.5;
     let tableY = cursorY;
 
-    // cabeçalho da tabela
     doc.setFontSize(12);
     doc.setFillColor(220, 220, 220);
     doc.rect(tableX, tableY, col1W, 20, 'F');
@@ -803,27 +804,112 @@ async function gerarRelatorio(dadosOriginais) {
     doc.text(header2, tableX + col1W + 5, tableY + 14);
     tableY += 20;
 
-    // linhas de dados
     doc.setFontSize(11);
     for (let i = 0; i < labels.length; i++) {
       if (tableY + 18 > 780) {
         doc.addPage();
         tableY = 40;
       }
-      // célula 1: label
       doc.rect(tableX, tableY, col1W, 18);
       doc.text(String(labels[i]), tableX + 5, tableY + 14);
-      // célula 2: valor
       doc.rect(tableX + col1W, tableY, col2W, 18);
       doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
-
       tableY += 18;
     }
 
-    // avança cursorY abaixo da tabela
     cursorY = tableY + 25;
+
+    // 3) calcula e injeta estatísticas (baseado em dadosOriginais)
+    //    detecta automaticamente o campo de data
+    const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
+      /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
+    );
+    if (dateField) {
+      const stats = calcularEstatisticas(dadosOriginais, dateField);
+
+      // quebra de página se faltar espaço
+      const needed = 16 + 16 + stats.variacaoMeses.length * 14 + 10;
+      if (cursorY + needed > 780) {
+        doc.addPage();
+        cursorY = 40;
+      }
+
+      doc.setFontSize(12);
+      doc.text('Estatísticas:', 40, cursorY);
+      cursorY += 16;
+
+      doc.setFontSize(11);
+      doc.text(
+        `Crescimento de ${stats.anoAnterior} → ${
+          stats.anoRecente
+        }: ${stats.variacaoAno.toFixed(2)}%`,
+        45,
+        cursorY,
+      );
+      cursorY += 16;
+
+      stats.variacaoMeses.forEach(({ mes, variacao }) => {
+        if (cursorY + 14 > 780) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.text(`${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
+        cursorY += 14;
+      });
+
+      cursorY += 10;
+    }
   }
 
-  // salva
-  doc.save('Relatorio_Visual_Completo.pdf');
+  // — Salva PDF —
+  doc.save('Relatorio_Visual_Completo_Com_Estatisticas.pdf');
+}
+
+/**
+ * @param {Array<Object>} dados        – seus dados originais (cada item com campo de data "YYYY-MM-DD...").
+ * @param {string} dateField           – nome do campo de data em cada objeto.
+ * @returns {{
+ *   anoRecente: string,
+ *   anoAnterior: string,
+ *   variacaoAno: number,               // em %
+ *   variacaoMeses: { mes: string, variacao: number }[]
+ * }}
+ */
+function calcularEstatisticas(dados, dateField) {
+  // 1) extrai lista única de anos e ordena
+  const anos = Array.from(
+    new Set(dados.map((i) => i[dateField].slice(0, 4))),
+  ).sort();
+  const anoRecente = anos.pop();
+  const anoAnterior = anos.pop();
+  if (!anoAnterior) {
+    return { anoRecente, anoAnterior: null, variacaoAno: 0, variacaoMeses: [] };
+  }
+
+  // 2) totais de cada ano
+  const totalRec = dados.filter((i) =>
+    i[dateField].startsWith(anoRecente),
+  ).length;
+  const totalAnt = dados.filter((i) =>
+    i[dateField].startsWith(anoAnterior),
+  ).length;
+  const variacaoAno = ((totalRec - totalAnt) / totalAnt) * 100;
+
+  // 3) variação mês-a-mês
+  const variacaoMeses = ordemMeses.map((mesNome, idx) => {
+    const mes = String(idx + 1).padStart(2, '0');
+    const recMes = dados.filter(
+      (i) =>
+        i[dateField].startsWith(anoRecente) && i[dateField].slice(5, 7) === mes,
+    ).length;
+    const antMes = dados.filter(
+      (i) =>
+        i[dateField].startsWith(anoAnterior) &&
+        i[dateField].slice(5, 7) === mes,
+    ).length;
+    const variacao = antMes ? ((recMes - antMes) / antMes) * 100 : 0;
+    return { mes: mesNome, variacao };
+  });
+
+  return { anoRecente, anoAnterior, variacaoAno, variacaoMeses };
 }
