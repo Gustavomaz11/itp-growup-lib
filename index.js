@@ -831,50 +831,52 @@ async function gerarRelatorio(dadosOriginais) {
     const entries = todosOsGraficos;
     const total = entries.length;
 
-    // 1) Pré-calcula imagens e estatísticas
+    // 1) Pré-calcula imagens e estatísticas para cada gráfico
     const tarefas = new Array(total);
     for (let i = 0; i < total; i++) {
       const {
         grafico,
         dadosOriginais: dadosGrafico,
-        parametro_busca: campoCat,
+        parametro_busca,
         porDuracao,
-        parametro_busca_fim: campoFim,
+        parametro_busca_fim,
       } = entries[i];
 
-      // captura base64 do gráfico UMA vez
+      // base64 da imagem
       const imgData = grafico.toBase64Image();
       const imgW = 515;
       const imgH = (grafico.height / grafico.width) * imgW;
 
-      // calcula estatísticas UMA vez
+      // estatísticas já preparadas
       const stats = calcularEstatisticasGrafico(
         dadosGrafico,
-        campoCat,
+        parametro_busca,
         porDuracao,
-        campoFim,
+        parametro_busca_fim,
       );
 
       tarefas[i] = { grafico, imgData, imgW, imgH, stats };
     }
 
-    // 2) Gera PDF iterando sobre resultados pré-calculados
+    // 2) Gera o PDF de fato
     for (let i = 0; i < total; i++) {
       const { grafico, imgData, imgW, imgH, stats } = tarefas[i];
 
-      // — Insere imagem
+      // Nova página se ultrapassar limite
       if (cursorY + imgH > 780) {
         doc.addPage();
         cursorY = 40;
       }
+
+      // Insere o gráfico
       doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
       cursorY += imgH + 10;
 
-      // — Tabela de valores
+      // Tabela de valores brutos
       const labels = grafico.data.labels;
       const valores = grafico.data.datasets[0].data;
       doc.setFontSize(11);
-      for (let j = 0, len = labels.length; j < len; j++) {
+      for (let j = 0; j < labels.length; j++) {
         if (cursorY > 780) {
           doc.addPage();
           cursorY = 40;
@@ -884,8 +886,37 @@ async function gerarRelatorio(dadosOriginais) {
       }
       cursorY += 10;
 
-      // — Estatísticas anual e mensal
-      // 3a) Variação Ano a Ano
+      // Se for SLA, imprime só bins + variação Ano-a-Ano e pula o restante
+      const labelGraf = grafico.data.datasets[0].label;
+      if (labelGraf === 'SLA') {
+        doc.setFontSize(12);
+        doc.text('SLA – Variação Ano a Ano por Faixa de Tempo:', 40, cursorY);
+        cursorY += 18;
+
+        stats.statsPorCategoria.forEach((binStat) => {
+          if (cursorY > 780) {
+            doc.addPage();
+            cursorY = 40;
+          }
+          // extrai trecho como "1h" de "> 1h < 24h"
+          const trecho =
+            (binStat.categoria.match(/> *([^<]+)/) || [])[1] ||
+            binStat.categoria;
+          doc.setFontSize(11);
+          doc.text(
+            `> ${trecho.trim()}: ${binStat.variacaoAno.toFixed(2)}%`,
+            60,
+            cursorY,
+          );
+          cursorY += 14;
+        });
+
+        cursorY += 20;
+        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
+        continue;
+      }
+
+      // Bloco geral: Variação Ano a Ano
       if (cursorY > 760) {
         doc.addPage();
         cursorY = 40;
@@ -897,7 +928,7 @@ async function gerarRelatorio(dadosOriginais) {
         cursorY,
       );
       cursorY += 18;
-      for (const catStat of stats.statsPorCategoria) {
+      stats.statsPorCategoria.forEach((catStat) => {
         if (cursorY > 780) {
           doc.addPage();
           cursorY = 40;
@@ -909,10 +940,10 @@ async function gerarRelatorio(dadosOriginais) {
           cursorY,
         );
         cursorY += 14;
-      }
+      });
       cursorY += 20;
 
-      // 3b) Variação Mês a Mês
+      // Bloco geral: Variação Mês a Mês
       if (cursorY > 760) {
         doc.addPage();
         cursorY = 40;
@@ -924,7 +955,7 @@ async function gerarRelatorio(dadosOriginais) {
         cursorY,
       );
       cursorY += 18;
-      for (const catStat of stats.statsPorCategoria) {
+      stats.statsPorCategoria.forEach((catStat) => {
         if (cursorY > 780) {
           doc.addPage();
           cursorY = 40;
@@ -932,7 +963,7 @@ async function gerarRelatorio(dadosOriginais) {
         doc.setFontSize(11);
         doc.text(`Categoria ${catStat.categoria}:`, 60, cursorY);
         cursorY += 14;
-        for (const mesStat of catStat.variacaoMeses) {
+        catStat.variacaoMeses.forEach((mesStat) => {
           if (cursorY > 780) {
             doc.addPage();
             cursorY = 40;
@@ -943,11 +974,10 @@ async function gerarRelatorio(dadosOriginais) {
             cursorY,
           );
           cursorY += 14;
-        }
+        });
         cursorY += 10;
-      }
+      });
 
-      // — Atualiza spinner
       updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
     }
 
