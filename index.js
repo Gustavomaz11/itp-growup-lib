@@ -728,14 +728,17 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
 
 /**
  * Gera o PDF: captura imagens dos gráficos, monta cabeçalho,
- * tabela com colunas dinâmicas e textos .
+ * tabela com colunas dinâmicas e textos “humanos”.
+ * @param {Array<Object>} dadosOriginais
  */
 async function gerarRelatorio(dadosOriginais) {
+  // 1) Extrai apenas o que está sendo exibido (filtrado ou não)
   const dadosAtuais = getDadosAtuais(dadosOriginais);
-  const { jsPDF } = window.jspdf;
+
+  // 2) Instancia o jsPDF direto da importação
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  // ——— Cabeçalho ———
+  // ——— Cabeçalho “humano” ———
   doc.setFontSize(16);
   doc.text('Relatório de Dados', 40, 50);
   doc.setFontSize(11);
@@ -753,10 +756,8 @@ async function gerarRelatorio(dadosOriginais) {
   // ——— Captura de imagens dos gráficos ———
   const canvases = document.querySelectorAll('canvas.meu-grafico');
   for (let canvasEl of canvases) {
-    // usa html2canvas para rasterizar o <canvas> original
     const bmp = await html2canvas(canvasEl, { backgroundColor: '#fff' });
     const imgData = bmp.toDataURL('image/png');
-    // ajusta largura na página (mantém proporção)
     const pageWidth = doc.internal.pageSize.getWidth() - 80;
     const scale = pageWidth / bmp.width;
     const imgHeight = bmp.height * scale;
@@ -770,17 +771,15 @@ async function gerarRelatorio(dadosOriginais) {
 
   // ——— Tabela com colunas dinâmicas ———
   if (dadosAtuais.length) {
-    // obtém chaves do primeiro objeto
     const keys = Object.keys(dadosAtuais[0]);
-    // cabeçalho (ex: "data_solicitacao" → "Data Solicitação")
     const colunas = keys.map((k) =>
       k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
     );
-    // calcula larguras iguais
+
     const pageWidth = doc.internal.pageSize.getWidth() - 80;
     const larguraCol = pageWidth / colunas.length;
 
-    // cabeçalho
+    // Cabeçalho da tabela
     doc.setFontSize(10);
     doc.setFillColor(230);
     colunas.forEach((titulo, i) => {
@@ -790,7 +789,7 @@ async function gerarRelatorio(dadosOriginais) {
     });
     cursorY += 25;
 
-    // linhas
+    // Linhas de dados
     dadosAtuais.forEach((item) => {
       if (cursorY > 780) {
         doc.addPage();
@@ -804,7 +803,7 @@ async function gerarRelatorio(dadosOriginais) {
       cursorY += 18;
     });
 
-    // observação final
+    // Observação final
     if (cursorY + 40 < 800) {
       doc.setFontSize(11);
       doc.text(
@@ -816,11 +815,12 @@ async function gerarRelatorio(dadosOriginais) {
       );
     }
   } else {
+    // Caso não haja dados
     doc.setFontSize(12);
     doc.text('Nenhum dado a exibir com os filtros atuais.', 40, cursorY);
   }
 
-  // abre em nova aba
+  // 3) Gera o blob e abre o PDF em nova aba
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
