@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 // —————————————————————————————————————————————————————————————————————————————————
 // 1) ESTILOS E FUNÇÕES PARA O SPINNER
 // —————————————————————————————————————————————————————————————————————————————————
+// Adiciona estilo do spinner + porcentagem
 const spinnerStyle = document.createElement('style');
 spinnerStyle.textContent = `
   #loadingSpinner {
@@ -15,6 +16,7 @@ spinnerStyle.textContent = `
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-direction: column;
     z-index: 9999;
   }
   #loadingSpinner .spinner {
@@ -24,6 +26,12 @@ spinnerStyle.textContent = `
     width: 60px; height: 60px;
     animation: spin 1s linear infinite;
   }
+  #loadingSpinner .percentage {
+    margin-top: 12px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #007bff;
+  }
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -31,15 +39,29 @@ spinnerStyle.textContent = `
 `;
 document.head.appendChild(spinnerStyle);
 
+// Exibe o overlay com spinner e texto de 0%
 function showLoadingSpinner() {
   if (!document.getElementById('loadingSpinner')) {
     const overlay = document.createElement('div');
     overlay.id = 'loadingSpinner';
-    overlay.innerHTML = `<div class="spinner"></div>`;
+    overlay.innerHTML = `
+      <div class="spinner"></div>
+      <div class="percentage">0%</div>
+    `;
     document.body.appendChild(overlay);
   }
 }
 
+// Atualiza o texto de porcentagem (ex: 45%)
+function updateLoadingSpinner(percent) {
+  const overlay = document.getElementById('loadingSpinner');
+  if (overlay) {
+    const txt = overlay.querySelector('.percentage');
+    if (txt) txt.textContent = `${Math.min(Math.max(percent, 0), 100)}%`;
+  }
+}
+
+// Remove o overlay
 function hideLoadingSpinner() {
   const overlay = document.getElementById('loadingSpinner');
   if (overlay) overlay.remove();
