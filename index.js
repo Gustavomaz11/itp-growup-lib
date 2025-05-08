@@ -807,7 +807,6 @@ function humanize(str) {
 }
 
 async function gerarRelatorio(dadosOriginais) {
-  // Exibe overlay com spinner e 0%
   showLoadingSpinner();
 
   try {
@@ -831,8 +830,6 @@ async function gerarRelatorio(dadosOriginais) {
     );
     cursorY += 30;
 
-    // Assume que `todosOsGraficos` é um array de objetos:
-    // { grafico, dadosOriginais, parametro_busca, porDuracao, parametro_busca_fim }
     const entries = todosOsGraficos;
     const total = entries.length;
     let done = 0;
@@ -879,7 +876,7 @@ async function gerarRelatorio(dadosOriginais) {
         endField,
       );
 
-      // 3a) Variação anual
+      // 3a) Variação anual por categoria
       if (cursorY > 760) {
         doc.addPage();
         cursorY = 40;
@@ -892,7 +889,6 @@ async function gerarRelatorio(dadosOriginais) {
       );
       cursorY += 18;
 
-      // 3b) Por categoria
       stats.statsPorCategoria.forEach((catStat) => {
         if (cursorY > 780) {
           doc.addPage();
@@ -908,15 +904,52 @@ async function gerarRelatorio(dadosOriginais) {
       });
       cursorY += 20;
 
-      // 4) Atualiza spinner (% concluído)
+      // 3b) Comparativo mês a mês por categoria
+      if (cursorY > 760) {
+        doc.addPage();
+        cursorY = 40;
+      }
+      doc.setFontSize(12);
+      doc.text(
+        `Variação Mês a Mês (${stats.anoAnterior} → ${stats.anoRecente}):`,
+        40,
+        cursorY,
+      );
+      cursorY += 18;
+
+      stats.statsPorCategoria.forEach((catStat) => {
+        // Nome da categoria
+        if (cursorY > 780) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.setFontSize(11);
+        doc.text(`Categoria ${catStat.categoria}:`, 60, cursorY);
+        cursorY += 14;
+
+        // Cada mês
+        catStat.variacaoMeses.forEach((mesStat) => {
+          if (cursorY > 780) {
+            doc.addPage();
+            cursorY = 40;
+          }
+          doc.text(
+            `   ${mesStat.mes}: ${mesStat.variacao.toFixed(2)}%`,
+            80,
+            cursorY,
+          );
+          cursorY += 14;
+        });
+        cursorY += 10;
+      });
+
+      // 4) Atualiza spinner
       done++;
       updateLoadingSpinner(Math.round((done / total) * 100));
     }
 
-    // 5) Salva o PDF
     doc.save('Relatorio_Visual_Completo.pdf');
   } finally {
-    // Remove o overlay
     hideLoadingSpinner();
   }
 }
