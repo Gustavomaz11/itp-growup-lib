@@ -716,9 +716,8 @@ function humanize(str) {
 
 /**
  * Cria e injeta o botão “Gerar Relatório” no container indicado.
- * @param {Array<Object>} dadosOriginais – seu array completo de dados.
- * @param {HTMLElement} containerEl – elemento DOM onde o botão será inserido.
- * @returns {HTMLButtonElement}
+ * @param {Array<Object>} dadosOriginais
+ * @param {HTMLElement} containerEl
  */
 export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
   const btn = document.createElement('button');
@@ -744,13 +743,10 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
  * @param {Array<Object>} dadosOriginais
  */
 async function gerarRelatorio(dadosOriginais) {
-  // 1) Extrai apenas o que está sendo exibido (filtrado ou não)
   const dadosAtuais = getDadosAtuais(dadosOriginais);
-
-  // 2) Instancia o jsPDF
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
 
-  // ——— Cabeçalho “humano” ———
+  // Cabeçalho
   doc.setFontSize(16);
   doc.text('Relatório de Dados', 40, 50);
   doc.setFontSize(11);
@@ -765,99 +761,93 @@ async function gerarRelatorio(dadosOriginais) {
 
   let cursorY = 125;
 
-  // ——— Resumo dinâmico de todos os campos ———
+  // Resumo dinâmico
   if (dadosAtuais.length) {
     const keys = Object.keys(dadosAtuais[0]);
-
-    // identifica campo de data para capturar anos
     const dateKey = keys.find((k) => /data|date/i.test(k)) || keys[0];
     const anos = Array.from(
       new Set(dadosAtuais.map((i) => new Date(i[dateKey]).getFullYear())),
     ).sort();
     const total = dadosAtuais.length;
 
-    // Para cada campo, decide se é numérico ou categórico
     const resumos = keys
       .filter((k) => k !== dateKey)
       .map((k) => {
-        const valores = dadosAtuais
-          .map((i) => i[k])
-          .filter((v) => v !== null && v !== undefined);
-        const num = valores.map((v) => parseFloat(v)).filter((v) => !isNaN(v));
-        if (num.length === valores.length) {
-          // é numérico → calcula média
-          const media = (num.reduce((a, b) => a + b, 0) / num.length).toFixed(
+        const vals = dadosAtuais.map((i) => i[k]).filter((v) => v != null);
+        const nums = vals.map((v) => parseFloat(v)).filter((n) => !isNaN(n));
+        if (nums.length === vals.length) {
+          const media = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(
             2,
           );
           return `Média de ${humanize(k)}: ${media}`;
         } else {
-          // é categórico → conta ocorrências
-          const counts = valores.reduce((acc, v) => {
-            const vv = String(v);
-            acc[vv] = (acc[vv] || 0) + 1;
+          const cnt = vals.reduce((acc, v) => {
+            const s = String(v);
+            acc[s] = (acc[s] || 0) + 1;
             return acc;
           }, {});
-          return `${humanize(k)}: ${Object.entries(counts)
-            .map(([val, cnt]) => `${val} (${cnt})`)
+          return `${humanize(k)}: ${Object.entries(cnt)
+            .map(([v, c]) => `${v} (${c})`)
             .join(', ')}`;
         }
       });
 
-    const resumoText =
+    const textoResumo =
       `Durante os anos de ${anos[0]} e ${anos[anos.length - 1]}, ` +
-      `foram exibidos ${total} registros. ` +
-      `Resumo por campo: ${resumos.join('; ')}.`;
+      `foram exibidos ${total} registros. Resumo por campo: ${resumos.join(
+        '; ',
+      )}.`;
 
     doc.setFontSize(12);
-    doc.text(resumoText, 40, cursorY, { maxWidth: 515 });
-    cursorY += thirty; // espaço após o resumo
+    doc.text(textoResumo, 40, cursorY, { maxWidth: 515 });
+    cursorY += 30; // <– corrigido de “thirty” para 30
   } else {
     doc.setFontSize(12);
     doc.text('Nenhum dado a exibir para o resumo.', 40, cursorY);
     cursorY += 20;
   }
 
-  // ——— Captura de imagens dos gráficos ———
+  // Captura de imagens dos gráficos
   const canvases = document.querySelectorAll('canvas.meu-grafico');
-  for (let canvasEl of canvases) {
-    const bmp = await html2canvas(canvasEl, { backgroundColor: '#fff' });
-    const imgData = bmp.toDataURL('image/png');
-    const pageWidth = doc.internal.pageSize.getWidth() - 80;
-    const scale = pageWidth / bmp.width;
-    const imgHeight = bmp.height * scale;
-    doc.addImage(imgData, 'PNG', 40, cursorY, pageWidth, imgHeight);
-    cursorY += imgHeight + 20;
+  for (let c of canvases) {
+    const bmp = await html2canvas(c, { backgroundColor: '#fff' });
+    const img = bmp.toDataURL('image/png');
+    const pageW = doc.internal.pageSize.getWidth() - 80;
+    const scale = pageW / bmp.width;
+    const imgH = bmp.height * scale;
+    doc.addImage(img, 'PNG', 40, cursorY, pageW, imgH);
+    cursorY += imgH + 20;
     if (cursorY > 760) {
       doc.addPage();
       cursorY = 40;
     }
   }
 
-  // ——— Tabela com colunas dinâmicas ———
+  // Tabela dinâmica
   if (dadosAtuais.length) {
     const keys = Object.keys(dadosAtuais[0]);
-    const colunas = keys.map(humanize);
-    const pageWidth = doc.internal.pageSize.getWidth() - 80;
-    const larguraCol = pageWidth / colunas.length;
+    const cols = keys.map(humanize);
+    const pageW = doc.internal.pageSize.getWidth() - 80;
+    const colW = pageW / cols.length;
 
-    // cabeçalho da tabela
+    // cabeçalho
     doc.setFontSize(10);
     doc.setFillColor(230);
-    colunas.forEach((titulo, i) => {
-      const x = 40 + i * larguraCol;
-      doc.rect(x, cursorY, larguraCol, 20, 'F');
-      doc.text(titulo, x + 4, cursorY + 14);
+    cols.forEach((t, i) => {
+      const x = 40 + i * colW;
+      doc.rect(x, cursorY, colW, 20, 'F');
+      doc.text(t, x + 4, cursorY + 14);
     });
     cursorY += 25;
 
-    // linhas de dados
+    // linhas
     dadosAtuais.forEach((item) => {
       if (cursorY > 780) {
         doc.addPage();
         cursorY = 40;
       }
       keys.forEach((k, i) => {
-        const x = 40 + i * larguraCol;
+        const x = 40 + i * colW;
         const txt = item[k] != null ? String(item[k]) : '';
         doc.text(txt, x + 4, cursorY);
       });
@@ -868,8 +858,7 @@ async function gerarRelatorio(dadosOriginais) {
     if (cursorY + 40 < 800) {
       doc.setFontSize(11);
       doc.text(
-        `Observação: mostrados ${dadosAtuais.length} registros conforme filtros aplicados. ` +
-          'Qualquer dúvida, entre em contato com o suporte.',
+        `Observação: mostrados ${dadosAtuais.length} registros conforme filtros aplicados.`,
         40,
         cursorY + 30,
         { maxWidth: 515 },
@@ -877,8 +866,7 @@ async function gerarRelatorio(dadosOriginais) {
     }
   }
 
-  // 3) Gera o blob e abre o PDF em nova aba
+  // Abre o PDF em nova aba
   const blob = doc.output('blob');
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
+  window.open(URL.createObjectURL(blob), '_blank');
 }
