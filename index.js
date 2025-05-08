@@ -710,9 +710,6 @@ function adicionarEstilosTabela() {
  * Função utilitária para humanizar nomes de campos:
  * ex: "prioridade_atendimento" → "Prioridade Atendimento"
  */
-function humanize(str) {
-  return str.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-}
 
 /**
  * Cria e injeta o botão “Gerar Relatório” no container indicado.
@@ -737,88 +734,96 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
 }
 
 /**
- * Gera o PDF completo:
- *  • Resumo geral apenas dos campos usados nos gráficos (exclui campos com muitos valores únicos)
- *  • Resumo de cada gráfico (labels + valores)
- *  • Imagens dos gráficos
- *  • Tabela dinâmica
+ * Humaniza um texto: replace underscores, capitaliza iniciais
+ */
+function humanize(str) {
+  return str.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+/**
+ * Gera o PDF completo, com cada gráfico e embaixo uma tabela genérica:
+ *  • primeira coluna: o que são os labels (ex: Prioridade, Cliente, Mês…)
+ *  • segunda coluna: o que é o dataset (Atendimentos, Média, Tempo…)
  */
 async function gerarRelatorio(dadosOriginais) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   let cursorY = 40;
 
-  // Cabeçalho principal
+  // --- Cabeçalho ---
   doc.setFontSize(18);
   doc.text('Relatório de Projeções e Resultados', 40, cursorY);
   cursorY += 25;
-
   doc.setDrawColor(0, 0, 0);
   doc.line(40, cursorY, 555, cursorY);
   cursorY += 20;
-
-  // Seção resumo textual breve
   doc.setFontSize(11);
   doc.text(
     'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
     40,
     cursorY,
   );
-  cursorY += 20;
+  cursorY += 30;
 
-  // Inserção visual dos gráficos capturados via html2canvas
+  // --- Para cada canvas (Chart.js) na página ---
   const canvases = document.querySelectorAll('canvas');
   for (let canvas of canvases) {
-    const image = await html2canvas(canvas, { backgroundColor: '#ffffff' });
-    const imgData = image.toDataURL('image/png');
-    const imgWidth = 515;
-    const imgHeight = (image.height * imgWidth) / image.width;
+    const chart = Chart.getChart(canvas); // pega a instância
+    const labels = chart.data.labels || []; // rótulos do eixo X
+    const valores = chart.data.datasets[0].data; // valores do dataset
+    const dsLabel = chart.data.datasets[0].label; // nome do dataset
 
-    if (cursorY + imgHeight > 780) {
+    // cabeçalhos dinâmicos
+    const header1 = chart.options.scales?.x?.title?.text || 'Categoria'; // ex: "Prioridade", "Cliente", "Mês"…
+    const header2 = dsLabel ? humanize(dsLabel) : 'Valor'; // ex: "Atendimentos", "Média", "Tempo"…
+
+    // renderiza imagem do gráfico
+    const image = await html2canvas(canvas, { backgroundColor: '#fff' });
+    const imgData = image.toDataURL('image/png');
+    const imgW = 515;
+    const imgH = (image.height * imgW) / image.width;
+    if (cursorY + imgH > 780) {
       doc.addPage();
       cursorY = 40;
     }
+    doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
+    cursorY += imgH + 10;
 
-    doc.addImage(imgData, 'PNG', 40, cursorY, imgWidth, imgHeight);
-    cursorY += imgHeight + 20;
-  }
+    // prepara dimensões da tabela
+    const tableX = 40;
+    const col1W = imgW * 0.5;
+    const col2W = imgW * 0.5;
+    let tableY = cursorY;
 
-  // Tabela resumida e estilizada
-  const dadosAtuais = getDadosAtuais(dadosOriginais);
-  if (dadosAtuais.length > 0) {
-    const colunas = Object.keys(dadosAtuais[0]).slice(0, 4); // limite a 4 colunas para melhor visualização
-    const colWidth = 515 / colunas.length;
-
-    // Header da tabela
+    // cabeçalho da tabela
     doc.setFontSize(12);
     doc.setFillColor(220, 220, 220);
-    colunas.forEach((coluna, i) => {
-      doc.rect(40 + i * colWidth, cursorY, colWidth, 20, 'F');
-      doc.text(humanize(coluna), 45 + i * colWidth, cursorY + 14);
-    });
-    cursorY += 25;
+    doc.rect(tableX, tableY, col1W, 20, 'F');
+    doc.text(header1, tableX + 5, tableY + 14);
+    doc.rect(tableX + col1W, tableY, col2W, 20, 'F');
+    doc.text(header2, tableX + col1W + 5, tableY + 14);
+    tableY += 20;
 
-    // Dados limitados para exemplo
-    dadosAtuais.slice(0, 10).forEach((item) => {
-      // limitar a 10 linhas
-      if (cursorY > 780) {
+    // linhas de dados
+    doc.setFontSize(11);
+    for (let i = 0; i < labels.length; i++) {
+      if (tableY + 18 > 780) {
         doc.addPage();
-        cursorY = 40;
+        tableY = 40;
       }
-      colunas.forEach((coluna, i) => {
-        doc.text(String(item[coluna]), 45 + i * colWidth, cursorY + 12);
-      });
-      cursorY += 18;
-    });
+      // célula 1: label
+      doc.rect(tableX, tableY, col1W, 18);
+      doc.text(String(labels[i]), tableX + 5, tableY + 14);
+      // célula 2: valor
+      doc.rect(tableX + col1W, tableY, col2W, 18);
+      doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
 
-    // Informação sobre limite
-    doc.setFontSize(10);
-    doc.text(
-      'Observação: Apenas primeiros 10 registros exibidos para visualização.',
-      40,
-      cursorY + 20,
-    );
+      tableY += 18;
+    }
+
+    // avança cursorY abaixo da tabela
+    cursorY = tableY + 25;
   }
 
-  // Salva PDF
-  doc.save('Relatorio_Visual.pdf');
+  // salva
+  doc.save('Relatorio_Visual_Completo.pdf');
 }
