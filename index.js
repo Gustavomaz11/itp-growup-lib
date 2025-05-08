@@ -743,9 +743,9 @@ function humanize(str) {
 /**
  * Gera o PDF completo:
  *  • Cabeçalho
- *  • Gráficos (html2canvas → imagem)
+ *  • Cada gráfico (html2canvas → imagem)
  *  • Tabela genérica (labels × valores)
- *  • Estatísticas ano-a-ano e mês-a-mês abaixo de cada tabela
+ *  • Estatísticas por categoria (ano-a-ano e mês-a-mês) abaixo de cada tabela
  */
 async function gerarRelatorio(dadosOriginais) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -773,6 +773,7 @@ async function gerarRelatorio(dadosOriginais) {
     const labels = chart.data.labels || [];
     const valores = chart.data.datasets[0].data;
     const dsLabel = chart.data.datasets[0].label;
+    const categoryField = chart.options._metadados?.parametro_busca || null;
 
     // cabeçalhos de tabela genéricos
     const header1 = chart.options.scales?.x?.title?.text || 'Categoria';
@@ -816,48 +817,56 @@ async function gerarRelatorio(dadosOriginais) {
       doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
       tableY += 18;
     }
-
     cursorY = tableY + 25;
 
-    // 3) calcula e injeta estatísticas (baseado em dadosOriginais)
-    //    detecta automaticamente o campo de data
-    const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
-      /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
-    );
-    if (dateField) {
-      const stats = calcularEstatisticas(dadosOriginais, dateField);
-
-      // quebra de página se faltar espaço
-      const needed = 16 + 16 + stats.variacaoMeses.length * 14 + 10;
-      if (cursorY + needed > 780) {
-        doc.addPage();
-        cursorY = 40;
-      }
-
-      doc.setFontSize(12);
-      doc.text('Estatísticas:', 40, cursorY);
-      cursorY += 16;
-
-      doc.setFontSize(11);
-      doc.text(
-        `Crescimento de ${stats.anoAnterior} → ${
-          stats.anoRecente
-        }: ${stats.variacaoAno.toFixed(2)}%`,
-        45,
-        cursorY,
+    // 3) estatísticas por categoria
+    if (categoryField) {
+      // encontra o campo de data
+      const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
+        /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
       );
-      cursorY += 16;
+      if (dateField) {
+        const stats = calcularEstatisticasGrafico(
+          dadosOriginais,
+          dateField,
+          categoryField,
+        );
 
-      stats.variacaoMeses.forEach(({ mes, variacao }) => {
-        if (cursorY + 14 > 780) {
+        // quebra de página se necessário
+        const blocoHeight =
+          16 + // título
+          stats.statsPorCategoria.length * (14 + 6) + // variações
+          10;
+        if (cursorY + blocoHeight > 780) {
           doc.addPage();
           cursorY = 40;
         }
-        doc.text(`${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
-        cursorY += 14;
-      });
 
-      cursorY += 10;
+        doc.setFontSize(12);
+        doc.text('Estatísticas por categoria:', 40, cursorY);
+        cursorY += 16;
+
+        doc.setFontSize(11);
+        stats.statsPorCategoria.forEach((cat) => {
+          // variação anual
+          doc.text(
+            `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
+            45,
+            cursorY,
+          );
+          cursorY += 14;
+          // variação mês-a-mês
+          cat.variacaoMeses.forEach(({ mes, variacao }) => {
+            if (cursorY + 12 > 780) {
+              doc.addPage();
+              cursorY = 40;
+            }
+            doc.text(`- ${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
+            cursorY += 12;
+          });
+          cursorY += 6;
+        });
+      }
     }
   }
 
@@ -866,50 +875,67 @@ async function gerarRelatorio(dadosOriginais) {
 }
 
 /**
- * @param {Array<Object>} dados        – seus dados originais (cada item com campo de data "YYYY-MM-DD...").
- * @param {string} dateField           – nome do campo de data em cada objeto.
+ * Calcula estatísticas ano-a-ano e mês-a-mês, para cada categoria de um gráfico.
+ *
+ * @param {Array<Object>} dados        – array completo de objetos, cada um com campo de data e o campo de categoria.
+ * @param {string} dateField           – nome do campo de data (formato "YYYY-MM-DD...").
+ * @param {string} categoryField       – nome do campo usado para agrupar o gráfico (ex: "prioridade", "cliente", etc.).
  * @returns {{
  *   anoRecente: string,
- *   anoAnterior: string,
- *   variacaoAno: number,               // em %
- *   variacaoMeses: { mes: string, variacao: number }[]
+ *   anoAnterior: string|null,
+ *   statsPorCategoria: Array<{
+ *     categoria: string,
+ *     variacaoAno: number,                  // % de variação ano-a-ano
+ *     variacaoMeses: Array<{mes: string, variacao: number}>
+ *   }>
  * }}
  */
-function calcularEstatisticas(dados, dateField) {
-  // 1) extrai lista única de anos e ordena
+function calcularEstatisticasGrafico(dados, dateField, categoryField) {
+  // 1) determina anos
   const anos = Array.from(
     new Set(dados.map((i) => i[dateField].slice(0, 4))),
   ).sort();
   const anoRecente = anos.pop();
-  const anoAnterior = anos.pop();
+  const anoAnterior = anos.pop() || null;
   if (!anoAnterior) {
-    return { anoRecente, anoAnterior: null, variacaoAno: 0, variacaoMeses: [] };
+    return { anoRecente, anoAnterior: null, statsPorCategoria: [] };
   }
 
-  // 2) totais de cada ano
-  const totalRec = dados.filter((i) =>
-    i[dateField].startsWith(anoRecente),
-  ).length;
-  const totalAnt = dados.filter((i) =>
-    i[dateField].startsWith(anoAnterior),
-  ).length;
-  const variacaoAno = ((totalRec - totalAnt) / totalAnt) * 100;
+  // 2) lista de categorias
+  const categorias = Array.from(new Set(dados.map((i) => i[categoryField])));
 
-  // 3) variação mês-a-mês
-  const variacaoMeses = ordemMeses.map((mesNome, idx) => {
-    const mes = String(idx + 1).padStart(2, '0');
-    const recMes = dados.filter(
-      (i) =>
-        i[dateField].startsWith(anoRecente) && i[dateField].slice(5, 7) === mes,
+  // 3) para cada categoria, calcula variação anual e mensal
+  const statsPorCategoria = categorias.map((cat) => {
+    // totais ano-a-ano
+    const totalRec = dados.filter(
+      (i) => i[dateField].startsWith(anoRecente) && i[categoryField] === cat,
     ).length;
-    const antMes = dados.filter(
-      (i) =>
-        i[dateField].startsWith(anoAnterior) &&
-        i[dateField].slice(5, 7) === mes,
+    const totalAnt = dados.filter(
+      (i) => i[dateField].startsWith(anoAnterior) && i[categoryField] === cat,
     ).length;
-    const variacao = antMes ? ((recMes - antMes) / antMes) * 100 : 0;
-    return { mes: mesNome, variacao };
+    const variacaoAno = totalAnt ? ((totalRec - totalAnt) / totalAnt) * 100 : 0;
+
+    // variação mês-a-mês
+    const variacaoMeses = ordemMeses.map((mesNome, idx) => {
+      const m = String(idx + 1).padStart(2, '0');
+      const recMes = dados.filter(
+        (i) =>
+          i[dateField].startsWith(anoRecente) &&
+          i[dateField].slice(5, 7) === m &&
+          i[categoryField] === cat,
+      ).length;
+      const antMes = dados.filter(
+        (i) =>
+          i[dateField].startsWith(anoAnterior) &&
+          i[dateField].slice(5, 7) === m &&
+          i[categoryField] === cat,
+      ).length;
+      const variacao = antMes ? ((recMes - antMes) / antMes) * 100 : 0;
+      return { mes: mesNome, variacao };
+    });
+
+    return { categoria: cat, variacaoAno, variacaoMeses };
   });
 
-  return { anoRecente, anoAnterior, variacaoAno, variacaoMeses };
+  return { anoRecente, anoAnterior, statsPorCategoria };
 }
