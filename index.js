@@ -2,6 +2,49 @@ import Chart from 'chart.js/auto';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
+// —————————————————————————————————————————————————————————————————————————————————
+// 1) ESTILOS E FUNÇÕES PARA O SPINNER
+// —————————————————————————————————————————————————————————————————————————————————
+const spinnerStyle = document.createElement('style');
+spinnerStyle.textContent = `
+  #loadingSpinner {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  #loadingSpinner .spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #007bff;
+    border-radius: 50%;
+    width: 60px; height: 60px;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+document.head.appendChild(spinnerStyle);
+
+function showLoadingSpinner() {
+  if (!document.getElementById('loadingSpinner')) {
+    const overlay = document.createElement('div');
+    overlay.id = 'loadingSpinner';
+    overlay.innerHTML = `<div class="spinner"></div>`;
+    document.body.appendChild(overlay);
+  }
+}
+
+function hideLoadingSpinner() {
+  const overlay = document.getElementById('loadingSpinner');
+  if (overlay) overlay.remove();
+}
+
 /** Estado compartilhado de filtros (chart + table) */
 export const filtrosAtuais = {};
 
@@ -749,135 +792,136 @@ function humanize(str) {
  *  • Estatísticas por categoria (ano-a-ano e mês-a-mês) abaixo de cada tabela
  */
 async function gerarRelatorio(dadosOriginais) {
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  let cursorY = 40;
+  showLoadingSpinner();
+  try {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    let cursorY = 40;
 
-  // — Cabeçalho —
-  doc.setFontSize(18);
-  doc.text('Relatório de Projeções e Resultados', 40, cursorY);
-  cursorY += 25;
-  doc.setDrawColor(0, 0, 0);
-  doc.line(40, cursorY, 555, cursorY);
-  cursorY += 20;
-  doc.setFontSize(11);
-  doc.text(
-    'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
-    40,
-    cursorY,
-  );
-  cursorY += 30;
-
-  // — Para cada gráfico na página —
-  const canvases = document.querySelectorAll('canvas');
-  for (let canvas of canvases) {
-    const chart = Chart.getChart(canvas);
-    const labels = chart.data.labels || [];
-    const valores = chart.data.datasets[0].data;
-    const dsLabel = chart.data.datasets[0].label;
-
-    // Cabeçalhos de tabela genéricos
-    const header1 = chart.options.scales?.x?.title?.text || 'Categoria';
-    const header2 = dsLabel ? humanize(dsLabel) : 'Valor';
-
-    // 1) Renderiza o gráfico como imagem
-    const image = await html2canvas(canvas, { backgroundColor: '#fff' });
-    const imgData = image.toDataURL('image/png');
-    const imgW = 515;
-    const imgH = (image.height * imgW) / image.width;
-    if (cursorY + imgH > 780) {
-      doc.addPage();
-      cursorY = 40;
-    }
-    doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
-    cursorY += imgH + 10;
-
-    // 2) Desenha tabela de labels × valores
-    const tableX = 40;
-    const col1W = imgW * 0.5;
-    const col2W = imgW * 0.5;
-    let tableY = cursorY;
-
-    doc.setFontSize(12);
-    doc.setFillColor(220, 220, 220);
-    doc.rect(tableX, tableY, col1W, 20, 'F');
-    doc.text(header1, tableX + 5, tableY + 14);
-    doc.rect(tableX + col1W, tableY, col2W, 20, 'F');
-    doc.text(header2, tableX + col1W + 5, tableY + 14);
-    tableY += 20;
-
+    // — Cabeçalho —
+    doc.setFontSize(18);
+    doc.text('Relatório de Projeções e Resultados', 40, cursorY);
+    cursorY += 25;
+    doc.setDrawColor(0, 0, 0);
+    doc.line(40, cursorY, 555, cursorY);
+    cursorY += 20;
     doc.setFontSize(11);
-    for (let i = 0; i < labels.length; i++) {
-      if (tableY + 18 > 780) {
+    doc.text(
+      'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
+      40,
+      cursorY,
+    );
+    cursorY += 30;
+
+    // — Para cada gráfico na página —
+    const canvases = document.querySelectorAll('canvas');
+    for (let canvas of canvases) {
+      const chart = Chart.getChart(canvas);
+      const labels = chart.data.labels || [];
+      const valores = chart.data.datasets[0].data;
+      const dsLabel = chart.data.datasets[0].label;
+
+      // Cabeçalhos de tabela genéricos
+      const header1 = chart.options.scales?.x?.title?.text || 'Categoria';
+      const header2 = dsLabel ? humanize(dsLabel) : 'Valor';
+
+      // 1) Renderiza o gráfico como imagem
+      const image = await html2canvas(canvas, { backgroundColor: '#fff' });
+      const imgData = image.toDataURL('image/png');
+      const imgW = 515;
+      const imgH = (image.height * imgW) / image.width;
+      if (cursorY + imgH > 780) {
         doc.addPage();
-        tableY = 40;
+        cursorY = 40;
       }
-      doc.rect(tableX, tableY, col1W, 18);
-      doc.text(String(labels[i]), tableX + 5, tableY + 14);
-      doc.rect(tableX + col1W, tableY, col2W, 18);
-      doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
-      tableY += 18;
-    }
+      doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
+      cursorY += imgH + 10;
 
-    cursorY = tableY + 25;
+      // 2) Desenha tabela de labels × valores
+      const tableX = 40;
+      const col1W = imgW * 0.5;
+      const col2W = imgW * 0.5;
+      let tableY = cursorY;
 
-    // 3) Estatísticas por categoria
-    const categoryField = chart._parametro_busca || null;
-    if (categoryField) {
-      // Detecta campo de data automaticamente
-      const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
-        /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
-      );
+      doc.setFontSize(12);
+      doc.setFillColor(220, 220, 220);
+      doc.rect(tableX, tableY, col1W, 20, 'F');
+      doc.text(header1, tableX + 5, tableY + 14);
+      doc.rect(tableX + col1W, tableY, col2W, 20, 'F');
+      doc.text(header2, tableX + col1W + 5, tableY + 14);
+      tableY += 20;
 
-      if (dateField) {
-        const stats = calcularEstatisticasGrafico(
-          dadosOriginais,
-          dateField,
-          categoryField,
+      doc.setFontSize(11);
+      for (let i = 0; i < labels.length; i++) {
+        if (tableY + 18 > 780) {
+          doc.addPage();
+          tableY = 40;
+        }
+        doc.rect(tableX, tableY, col1W, 18);
+        doc.text(String(labels[i]), tableX + 5, tableY + 14);
+        doc.rect(tableX + col1W, tableY, col2W, 18);
+        doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
+        tableY += 18;
+      }
+
+      cursorY = tableY + 25;
+
+      // 3) Estatísticas por categoria
+      const categoryField = chart._parametro_busca || null;
+      if (categoryField) {
+        const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
+          /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
         );
 
-        // Título da seção “Estatísticas por categoria”
-        if (cursorY + 16 > 780) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(12);
-        doc.text('Estatísticas por categoria:', 40, cursorY);
-        cursorY += 16;
+        if (dateField) {
+          const stats = calcularEstatisticasGrafico(
+            dadosOriginais,
+            dateField,
+            categoryField,
+          );
 
-        // Linhas de estatísticas
-        doc.setFontSize(11);
-        stats.statsPorCategoria.forEach((cat) => {
-          if (cursorY + 14 > 780) {
+          if (cursorY + 16 > 780) {
             doc.addPage();
             cursorY = 40;
           }
-          doc.text(
-            `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
-            45,
-            cursorY,
-          );
-          cursorY += 14;
+          doc.setFontSize(12);
+          doc.text('Estatísticas por categoria:', 40, cursorY);
+          cursorY += 16;
 
-          cat.variacaoMeses.forEach(({ mes, variacao }) => {
-            if (cursorY + 12 > 780) {
+          doc.setFontSize(11);
+          stats.statsPorCategoria.forEach((cat) => {
+            if (cursorY + 14 > 780) {
               doc.addPage();
               cursorY = 40;
             }
-            doc.text(`- ${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
-            cursorY += 12;
+            doc.text(
+              `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
+              45,
+              cursorY,
+            );
+            cursorY += 14;
+
+            cat.variacaoMeses.forEach(({ mes, variacao }) => {
+              if (cursorY + 12 > 780) {
+                doc.addPage();
+                cursorY = 40;
+              }
+              doc.text(`- ${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
+              cursorY += 12;
+            });
+
+            cursorY += 6;
           });
 
-          cursorY += 6;
-        });
-
-        // Pequeno espaço antes do próximo gráfico
-        cursorY += 10;
+          cursorY += 10;
+        }
       }
     }
-  }
 
-  // — Salva o PDF —
-  doc.save('Relatorio_Visual_Completo_Com_Estatisticas.pdf');
+    // — Salva o PDF —
+    doc.save('Relatorio_Visual_Completo_Com_Estatisticas.pdf');
+  } finally {
+    hideLoadingSpinner();
+  }
 }
 
 /**
