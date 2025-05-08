@@ -365,6 +365,7 @@ export function criarGrafico(
 
     // Cria e registra o gráfico
     grafico = new Chart(ctx, config);
+    grafico._parametro_busca = parametro_busca;
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
@@ -773,13 +774,12 @@ async function gerarRelatorio(dadosOriginais) {
     const labels = chart.data.labels || [];
     const valores = chart.data.datasets[0].data;
     const dsLabel = chart.data.datasets[0].label;
-    const categoryField = chart.options._metadados?.parametro_busca || null;
 
-    // cabeçalhos de tabela genéricos
+    // Cabeçalhos de tabela genéricos
     const header1 = chart.options.scales?.x?.title?.text || 'Categoria';
     const header2 = dsLabel ? humanize(dsLabel) : 'Valor';
 
-    // 1) renderiza gráfico como imagem
+    // 1) Renderiza o gráfico como imagem
     const image = await html2canvas(canvas, { backgroundColor: '#fff' });
     const imgData = image.toDataURL('image/png');
     const imgW = 515;
@@ -791,7 +791,7 @@ async function gerarRelatorio(dadosOriginais) {
     doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
     cursorY += imgH + 10;
 
-    // 2) desenha tabela de labels × valores
+    // 2) Desenha tabela de labels × valores
     const tableX = 40;
     const col1W = imgW * 0.5;
     const col2W = imgW * 0.5;
@@ -817,14 +817,17 @@ async function gerarRelatorio(dadosOriginais) {
       doc.text(String(valores[i]), tableX + col1W + 5, tableY + 14);
       tableY += 18;
     }
+
     cursorY = tableY + 25;
 
-    // 3) estatísticas por categoria
+    // 3) Estatísticas por categoria
+    const categoryField = chart._parametro_busca || null;
     if (categoryField) {
-      // encontra o campo de data
+      // Detecta campo de data automaticamente
       const dateField = Object.keys(dadosOriginais[0] || {}).find((f) =>
         /^\d{4}-\d{2}-\d{2}/.test(dadosOriginais[0][f]),
       );
+
       if (dateField) {
         const stats = calcularEstatisticasGrafico(
           dadosOriginais,
@@ -832,30 +835,29 @@ async function gerarRelatorio(dadosOriginais) {
           categoryField,
         );
 
-        // quebra de página se necessário
-        const blocoHeight =
-          16 + // título
-          stats.statsPorCategoria.length * (14 + 6) + // variações
-          10;
-        if (cursorY + blocoHeight > 780) {
+        // Título da seção “Estatísticas por categoria”
+        if (cursorY + 16 > 780) {
           doc.addPage();
           cursorY = 40;
         }
-
         doc.setFontSize(12);
         doc.text('Estatísticas por categoria:', 40, cursorY);
         cursorY += 16;
 
+        // Linhas de estatísticas
         doc.setFontSize(11);
         stats.statsPorCategoria.forEach((cat) => {
-          // variação anual
+          if (cursorY + 14 > 780) {
+            doc.addPage();
+            cursorY = 40;
+          }
           doc.text(
             `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
             45,
             cursorY,
           );
           cursorY += 14;
-          // variação mês-a-mês
+
           cat.variacaoMeses.forEach(({ mes, variacao }) => {
             if (cursorY + 12 > 780) {
               doc.addPage();
@@ -864,13 +866,17 @@ async function gerarRelatorio(dadosOriginais) {
             doc.text(`- ${mes}: ${variacao.toFixed(2)}%`, 60, cursorY);
             cursorY += 12;
           });
+
           cursorY += 6;
         });
+
+        // Pequeno espaço antes do próximo gráfico
+        cursorY += 10;
       }
     }
   }
 
-  // — Salva PDF —
+  // — Salva o PDF —
   doc.save('Relatorio_Visual_Completo_Com_Estatisticas.pdf');
 }
 
