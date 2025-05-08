@@ -744,171 +744,81 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
  *  • Tabela dinâmica
  */
 async function gerarRelatorio(dadosOriginais) {
-  const dadosAtuais = getDadosAtuais(dadosOriginais);
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  let cursorY = 50;
+  let cursorY = 40;
 
-  // Cabeçalho
-  doc.setFontSize(16);
-  doc.text('Relatório de Dados', 40, cursorY);
+  // Cabeçalho principal
+  doc.setFontSize(18);
+  doc.text('Relatório de Projeções e Resultados', 40, cursorY);
+  cursorY += 25;
+
+  doc.setDrawColor(0, 0, 0);
+  doc.line(40, cursorY, 555, cursorY);
+  cursorY += 20;
+
+  // Seção resumo textual breve
   doc.setFontSize(11);
   doc.text(
-    'Dados conforme visualizados na tela: resumo geral, gráficos e tabela.',
+    'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
     40,
-    (cursorY += 20),
-    { maxWidth: 515 },
+    cursorY,
   );
-  doc.text(`Emissão: ${new Date().toLocaleString()}`, 40, (cursorY += 20));
-  cursorY += 15;
+  cursorY += 20;
 
-  // — Resumo Geral dos Campos dos Gráficos —
-  if (dadosAtuais.length) {
-    // 1) Quebras de ano
-    const keysAll = Object.keys(dadosAtuais[0]);
-    const dateKey = keysAll.find((k) => /data|date/i.test(k)) || keysAll[0];
-    const anos = Array.from(
-      new Set(dadosAtuais.map((i) => new Date(i[dateKey]).getFullYear())),
-    ).sort();
-    const total = dadosAtuais.length;
+  // Inserção visual dos gráficos capturados via html2canvas
+  const canvases = document.querySelectorAll('canvas');
+  for (let canvas of canvases) {
+    const image = await html2canvas(canvas, { backgroundColor: '#ffffff' });
+    const imgData = image.toDataURL('image/png');
+    const imgWidth = 515;
+    const imgHeight = (image.height * imgWidth) / image.width;
 
-    // 2) Campos efetivamente usados nos gráficos
-    const camposGraficos = todosOsGraficos.map((e) => e.parametro_busca);
-    const camposUnicos = [...new Set(camposGraficos)];
-
-    // 3) Critério de unicidade: pule campos com >80% de valores únicos
-    const threshold = 0.8 * total;
-
-    // 4) Gera resumos apenas desses campos
-    const resumos = camposUnicos
-      .filter((k) => k !== dateKey)
-      .map((k) => {
-        const vals = dadosAtuais.map((i) => i[k]).filter((v) => v != null);
-        const unicos = new Set(vals).size;
-        if (unicos > threshold) {
-          // campo com valores excessivamente únicos → ignora
-          return null;
-        }
-        // decide se é numérico ou categórico
-        const nums = vals.map((v) => parseFloat(v)).filter((n) => !isNaN(n));
-        if (nums.length === vals.length) {
-          const media = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(
-            2,
-          );
-          return `Média de ${humanize(k)}: ${media}`;
-        } else {
-          const contagem = vals.reduce((acc, v) => {
-            const s = String(v);
-            acc[s] = (acc[s] || 0) + 1;
-            return acc;
-          }, {});
-          const partes = Object.entries(contagem).map(
-            ([val, cnt]) => `${val}: ${cnt} atendimentos`,
-          );
-          return `${humanize(k)}: ${partes.join(', ')}`;
-        }
-      })
-      .filter((txt) => txt); // remove nulls
-
-    // 5) Monta o parágrafo final
-    const resumoText =
-      `Durante ${anos[0]}–${anos[anos.length - 1]}, ${total} registros. ` +
-      `Resumo geral: ${resumos.join('; ')}.`;
-
-    doc.setFontSize(12);
-    doc.text(resumoText, 40, cursorY, { maxWidth: 515 });
-    cursorY += 30;
-  } else {
-    doc.setFontSize(12);
-    doc.text('Nenhum dado a exibir para o resumo geral.', 40, cursorY);
-    cursorY += 20;
-  }
-
-  // — Resumo de Cada Gráfico —
-  if (todosOsGraficos.length) {
-    doc.setFontSize(12);
-    doc.text('Resumo dos gráficos:', 40, cursorY);
-    cursorY += 18;
-
-    todosOsGraficos.forEach(({ grafico, parametro_busca }) => {
-      const ds = grafico.data.datasets[0];
-      const labelCampo = humanize(parametro_busca);
-      const labels = grafico.data.labels;
-      const valores = ds.data;
-      const partes = labels.map(
-        (lab, i) => `${lab}: ${valores[i]} atendimentos`,
-      );
-      const linha = `${labelCampo}: ${partes.join('; ')}`;
-      doc.text(linha, 40, cursorY, { maxWidth: 515 });
-      cursorY += 15;
-      if (cursorY > 760) {
-        doc.addPage();
-        cursorY = 40;
-      }
-    });
-
-    cursorY += 20;
-  }
-
-  // — Captura de Imagens dos Gráficos —
-  const canvases = document.querySelectorAll('canvas.meu-grafico');
-  for (let c of canvases) {
-    const bmp = await html2canvas(c, { backgroundColor: '#fff' });
-    const imgData = bmp.toDataURL('image/png');
-    const pageW = doc.internal.pageSize.getWidth() - 80;
-    const scale = pageW / bmp.width;
-    const imgH = bmp.height * scale;
-    doc.addImage(imgData, 'PNG', 40, cursorY, pageW, imgH);
-    cursorY += imgH + 20;
-    if (cursorY > 760) {
+    if (cursorY + imgHeight > 780) {
       doc.addPage();
       cursorY = 40;
     }
+
+    doc.addImage(imgData, 'PNG', 40, cursorY, imgWidth, imgHeight);
+    cursorY += imgHeight + 20;
   }
 
-  // — Tabela Dinâmica —
-  if (dadosAtuais.length) {
-    const keys = Object.keys(dadosAtuais[0]);
-    const cols = keys.map(humanize);
-    const pageW = doc.internal.pageSize.getWidth() - 80;
-    const colW = pageW / cols.length;
+  // Tabela resumida e estilizada
+  const dadosAtuais = getDadosAtuais(dadosOriginais);
+  if (dadosAtuais.length > 0) {
+    const colunas = Object.keys(dadosAtuais[0]).slice(0, 4); // limite a 4 colunas para melhor visualização
+    const colWidth = 515 / colunas.length;
 
-    // Cabeçalho da tabela
-    doc.setFontSize(10);
-    doc.setFillColor(230);
-    cols.forEach((t, i) => {
-      const x = 40 + i * colW;
-      doc.rect(x, cursorY, colW, 20, 'F');
-      doc.text(t, x + 4, cursorY + 14);
+    // Header da tabela
+    doc.setFontSize(12);
+    doc.setFillColor(220, 220, 220);
+    colunas.forEach((coluna, i) => {
+      doc.rect(40 + i * colWidth, cursorY, colWidth, 20, 'F');
+      doc.text(humanize(coluna), 45 + i * colWidth, cursorY + 14);
     });
     cursorY += 25;
 
-    // Linhas de dados
-    dadosAtuais.forEach((item) => {
+    // Dados limitados para exemplo
+    dadosAtuais.slice(0, 10).forEach((item) => {
+      // limitar a 10 linhas
       if (cursorY > 780) {
         doc.addPage();
         cursorY = 40;
       }
-      keys.forEach((k, i) => {
-        const x = 40 + i * colW;
-        const txt = item[k] != null ? String(item[k]) : '';
-        doc.text(txt, x + 4, cursorY);
+      colunas.forEach((coluna, i) => {
+        doc.text(String(item[coluna]), 45 + i * colWidth, cursorY + 12);
       });
       cursorY += 18;
     });
 
-    // Observação final
-    if (cursorY + 40 < 800) {
-      doc.setFontSize(11);
-      doc.text(
-        `Observação: ${dadosAtuais.length} registros exibidos conforme filtros.`,
-        40,
-        cursorY + 30,
-        { maxWidth: 515 },
-      );
-    }
+    // Informação sobre limite
+    doc.setFontSize(10);
+    doc.text(
+      'Observação: Apenas primeiros 10 registros exibidos para visualização.',
+      40,
+      cursorY + 20,
+    );
   }
 
-  // — Abre o PDF em nova aba —
-  const blob = doc.output('blob');
-  window.open(URL.createObjectURL(blob), '_blank');
+  // Salva PDF
+  doc.save('Relatorio_Visual.pdf');
 }
