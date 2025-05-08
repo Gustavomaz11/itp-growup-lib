@@ -1,4 +1,6 @@
 import Chart from 'chart.js/auto';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 /** Estado compartilhado de filtros (chart + table) */
 export const filtrosAtuais = {};
@@ -702,4 +704,124 @@ function adicionarEstilosTabela() {
     .pagination-controls { /* … */ }
   `;
   document.head.appendChild(style);
+}
+
+/**
+ * Cria e injeta o botão “Gerar Relatório” no container indicado.
+ */
+export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
+  const btn = document.createElement('button');
+  btn.textContent = 'Gerar Relatório';
+  Object.assign(btn.style, {
+    padding: '6px 12px',
+    borderRadius: '4px',
+    border: 'none',
+    background: '#007bff',
+    color: '#fff',
+    cursor: 'pointer',
+    margin: '8px 0',
+  });
+  btn.addEventListener('click', () => gerarRelatorio(dadosOriginais));
+  containerEl.appendChild(btn);
+  return btn;
+}
+
+/**
+ * Gera o PDF: captura imagens dos gráficos, monta cabeçalho,
+ * tabela com colunas dinâmicas e textos .
+ */
+async function gerarRelatorio(dadosOriginais) {
+  const dadosAtuais = getDadosAtuais(dadosOriginais);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+
+  // ——— Cabeçalho ———
+  doc.setFontSize(16);
+  doc.text('Relatório de Dados', 40, 50);
+  doc.setFontSize(11);
+  doc.text(
+    'Este documento apresenta os dados conforme visualizados na tela, ' +
+      'incluindo os gráficos e a tabela resultante da filtragem atual.',
+    40,
+    70,
+    { maxWidth: 515 },
+  );
+  doc.text(`Emissão: ${new Date().toLocaleString()}`, 40, 100);
+
+  let cursorY = 130;
+
+  // ——— Captura de imagens dos gráficos ———
+  const canvases = document.querySelectorAll('canvas.meu-grafico');
+  for (let canvasEl of canvases) {
+    // usa html2canvas para rasterizar o <canvas> original
+    const bmp = await html2canvas(canvasEl, { backgroundColor: '#fff' });
+    const imgData = bmp.toDataURL('image/png');
+    // ajusta largura na página (mantém proporção)
+    const pageWidth = doc.internal.pageSize.getWidth() - 80;
+    const scale = pageWidth / bmp.width;
+    const imgHeight = bmp.height * scale;
+    doc.addImage(imgData, 'PNG', 40, cursorY, pageWidth, imgHeight);
+    cursorY += imgHeight + 20;
+    if (cursorY > 760) {
+      doc.addPage();
+      cursorY = 40;
+    }
+  }
+
+  // ——— Tabela com colunas dinâmicas ———
+  if (dadosAtuais.length) {
+    // obtém chaves do primeiro objeto
+    const keys = Object.keys(dadosAtuais[0]);
+    // cabeçalho (ex: "data_solicitacao" → "Data Solicitação")
+    const colunas = keys.map((k) =>
+      k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+    );
+    // calcula larguras iguais
+    const pageWidth = doc.internal.pageSize.getWidth() - 80;
+    const larguraCol = pageWidth / colunas.length;
+
+    // cabeçalho
+    doc.setFontSize(10);
+    doc.setFillColor(230);
+    colunas.forEach((titulo, i) => {
+      const x = 40 + i * larguraCol;
+      doc.rect(x, cursorY, larguraCol, 20, 'F');
+      doc.text(titulo, x + 4, cursorY + 14);
+    });
+    cursorY += 25;
+
+    // linhas
+    dadosAtuais.forEach((item) => {
+      if (cursorY > 780) {
+        doc.addPage();
+        cursorY = 40;
+      }
+      keys.forEach((k, i) => {
+        const x = 40 + i * larguraCol;
+        const txt = item[k] != null ? String(item[k]) : '';
+        doc.text(txt, x + 4, cursorY);
+      });
+      cursorY += 18;
+    });
+
+    // observação final
+    if (cursorY + 40 < 800) {
+      doc.setFontSize(11);
+      doc.text(
+        `Observação: mostrados ${dadosAtuais.length} registros conforme filtros aplicados. ` +
+          'Qualquer dúvida, entre em contato com o suporte.',
+        40,
+        cursorY + 30,
+        { maxWidth: 515 },
+      );
+    }
+  } else {
+    doc.setFontSize(12);
+    doc.text('Nenhum dado a exibir com os filtros atuais.', 40, cursorY);
+  }
+
+  // abre em nova aba
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
 }
