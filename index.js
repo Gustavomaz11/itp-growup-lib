@@ -716,6 +716,8 @@ function humanize(str) {
 
 /**
  * Cria e injeta o botão “Gerar Relatório” no container indicado.
+ * @param {Array<Object>} dadosOriginais – seu array completo de dados.
+ * @param {HTMLElement} containerEl – elemento onde o botão será inserido.
  */
 export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
   const btn = document.createElement('button');
@@ -736,7 +738,7 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
 
 /**
  * Gera o PDF completo:
- *  • Resumo geral dos dados (todos os campos)
+ *  • Resumo geral apenas dos campos usados nos gráficos (exclui campos com muitos valores únicos)
  *  • Resumo de cada gráfico (labels + valores)
  *  • Imagens dos gráficos
  *  • Tabela dinâmica
@@ -746,7 +748,7 @@ async function gerarRelatorio(dadosOriginais) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   let cursorY = 50;
 
-  // ——— Cabeçalho ———
+  // Cabeçalho
   doc.setFontSize(16);
   doc.text('Relatório de Dados', 40, cursorY);
   doc.setFontSize(11);
@@ -759,40 +761,61 @@ async function gerarRelatorio(dadosOriginais) {
   doc.text(`Emissão: ${new Date().toLocaleString()}`, 40, (cursorY += 20));
   cursorY += 15;
 
-  // ——— Resumo Geral (todos os campos) ———
+  // — Resumo Geral dos Campos dos Gráficos —
   if (dadosAtuais.length) {
-    const keys = Object.keys(dadosAtuais[0]);
-    // encontra campo de data para anos
-    const dateKey = keys.find((k) => /data|date/i.test(k)) || keys[0];
+    // 1) Quebras de ano
+    const keysAll = Object.keys(dadosAtuais[0]);
+    const dateKey = keysAll.find((k) => /data|date/i.test(k)) || keysAll[0];
     const anos = Array.from(
       new Set(dadosAtuais.map((i) => new Date(i[dateKey]).getFullYear())),
     ).sort();
     const total = dadosAtuais.length;
-    // monta resumos por campo
-    const resumos = keys
+
+    // 2) Campos efetivamente usados nos gráficos
+    const camposGraficos = todosOsGraficos.map((e) => e.parametro_busca);
+    const camposUnicos = [...new Set(camposGraficos)];
+
+    // 3) Critério de unicidade: pule campos com >80% de valores únicos
+    const threshold = 0.8 * total;
+
+    // 4) Gera resumos apenas desses campos
+    const resumos = camposUnicos
       .filter((k) => k !== dateKey)
       .map((k) => {
         const vals = dadosAtuais.map((i) => i[k]).filter((v) => v != null);
+        const unicos = new Set(vals).size;
+        if (unicos > threshold) {
+          // campo com valores excessivamente únicos → ignora
+          return null;
+        }
+        // decide se é numérico ou categórico
         const nums = vals.map((v) => parseFloat(v)).filter((n) => !isNaN(n));
         if (nums.length === vals.length) {
-          const m = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2);
-          return `Média de ${humanize(k)}: ${m}`;
+          const media = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(
+            2,
+          );
+          return `Média de ${humanize(k)}: ${media}`;
         } else {
-          const cnt = vals.reduce((a, v) => {
+          const contagem = vals.reduce((acc, v) => {
             const s = String(v);
-            a[s] = (a[s] || 0) + 1;
-            return a;
+            acc[s] = (acc[s] || 0) + 1;
+            return acc;
           }, {});
-          return `${humanize(k)}: ${Object.entries(cnt)
-            .map(([v, c]) => `${v} (${c})`)
-            .join(', ')}`;
+          const partes = Object.entries(contagem).map(
+            ([val, cnt]) => `${val}: ${cnt} atendimentos`,
+          );
+          return `${humanize(k)}: ${partes.join(', ')}`;
         }
-      });
-    const textoGeral =
+      })
+      .filter((txt) => txt); // remove nulls
+
+    // 5) Monta o parágrafo final
+    const resumoText =
       `Durante ${anos[0]}–${anos[anos.length - 1]}, ${total} registros. ` +
       `Resumo geral: ${resumos.join('; ')}.`;
+
     doc.setFontSize(12);
-    doc.text(textoGeral, 40, (cursorY += 0), { maxWidth: 515 });
+    doc.text(resumoText, 40, cursorY, { maxWidth: 515 });
     cursorY += 30;
   } else {
     doc.setFontSize(12);
@@ -800,21 +823,21 @@ async function gerarRelatorio(dadosOriginais) {
     cursorY += 20;
   }
 
-  // ——— Resumo de cada Gráfico ———
+  // — Resumo de Cada Gráfico —
   if (todosOsGraficos.length) {
     doc.setFontSize(12);
     doc.text('Resumo dos gráficos:', 40, cursorY);
     cursorY += 18;
 
-    todosOsGraficos.forEach(({ grafico }) => {
+    todosOsGraficos.forEach(({ grafico, parametro_busca }) => {
       const ds = grafico.data.datasets[0];
-      const campoLabel = humanize(ds.label);
+      const labelCampo = humanize(parametro_busca);
       const labels = grafico.data.labels;
       const valores = ds.data;
       const partes = labels.map(
         (lab, i) => `${lab}: ${valores[i]} atendimentos`,
       );
-      const linha = `${campoLabel}: ${partes.join('; ')}`;
+      const linha = `${labelCampo}: ${partes.join('; ')}`;
       doc.text(linha, 40, cursorY, { maxWidth: 515 });
       cursorY += 15;
       if (cursorY > 760) {
@@ -826,10 +849,10 @@ async function gerarRelatorio(dadosOriginais) {
     cursorY += 20;
   }
 
-  // ——— Captura de Imagens dos Gráficos ———
+  // — Captura de Imagens dos Gráficos —
   const canvases = document.querySelectorAll('canvas.meu-grafico');
-  for (let canvasEl of canvases) {
-    const bmp = await html2canvas(canvasEl, { backgroundColor: '#fff' });
+  for (let c of canvases) {
+    const bmp = await html2canvas(c, { backgroundColor: '#fff' });
     const imgData = bmp.toDataURL('image/png');
     const pageW = doc.internal.pageSize.getWidth() - 80;
     const scale = pageW / bmp.width;
@@ -842,7 +865,7 @@ async function gerarRelatorio(dadosOriginais) {
     }
   }
 
-  // ——— Tabela Dinâmica ———
+  // — Tabela Dinâmica —
   if (dadosAtuais.length) {
     const keys = Object.keys(dadosAtuais[0]);
     const cols = keys.map(humanize);
@@ -885,7 +908,7 @@ async function gerarRelatorio(dadosOriginais) {
     }
   }
 
-  // ——— Abre o PDF em nova aba ———
+  // — Abre o PDF em nova aba —
   const blob = doc.output('blob');
   window.open(URL.createObjectURL(blob), '_blank');
 }
