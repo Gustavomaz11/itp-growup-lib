@@ -1089,21 +1089,20 @@ export function criarChartRace(
   chave,
   obj,
   callback,
-  porDuracao = true,
-  parametro_busca_fim = null,
+  dateField, // Novo parâmetro para campo de data
 ) {
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   const wrapper = ctx.canvas.parentNode;
 
-  const dateField = Object.keys(dadosOriginais[0] || {}).find((field) =>
-    dadosOriginais.every(
+  if (
+    !dateField ||
+    !dadosOriginais.every(
       (item) =>
-        typeof item[field] === 'string' &&
-        /^\d{4}-\d{2}-\d{2}/.test(item[field]),
-    ),
-  );
-  if (!dateField) {
-    console.error('Não foi possível detectar campo de data');
+        typeof item[dateField] === 'string' &&
+        /^\d{4}-\d{2}-\d{2}/.test(item[dateField]),
+    )
+  ) {
+    console.error('Campo de data inválido ou ausente.');
     return;
   }
 
@@ -1114,7 +1113,7 @@ export function criarChartRace(
     if (!groupedByTime[timeKey]) groupedByTime[timeKey] = {};
     groupedByTime[timeKey][cat] = (groupedByTime[timeKey][cat] || 0) + 1;
   });
-  const times = Object.keys(groupedByTime).sort();
+  const times = Object.keys(groupedByTime).sort(); // Ordenação cronológica
   const allCategories = Array.from(
     new Set(dadosOriginais.map((d) => d[parametro_busca] || '—')),
   );
