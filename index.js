@@ -1092,51 +1092,86 @@ export function criarChartRace(
   porDuracao = true,
   parametro_busca_fim = null,
 ) {
-  // Cópia imutável dos dados originais
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
+  const wrapper = ctx.canvas.parentNode;
 
-  // Configurações iniciais
+  const dateField = Object.keys(dadosOriginais[0] || {}).find((field) =>
+    dadosOriginais.every(
+      (item) =>
+        typeof item[field] === 'string' &&
+        /^\d{4}-\d{2}-\d{2}/.test(item[field]),
+    ),
+  );
+  if (!dateField) {
+    console.error('Não foi possível detectar campo de data');
+    return;
+  }
+
+  const groupedByTime = {};
+  dadosOriginais.forEach((item) => {
+    const timeKey = item[dateField].slice(0, 7); // 'YYYY-MM'
+    const cat = item[parametro_busca] || '—';
+    if (!groupedByTime[timeKey]) groupedByTime[timeKey] = {};
+    groupedByTime[timeKey][cat] = (groupedByTime[timeKey][cat] || 0) + 1;
+  });
+  const times = Object.keys(groupedByTime).sort();
+  const allCategories = Array.from(
+    new Set(dadosOriginais.map((d) => d[parametro_busca] || '—')),
+  );
+
   const svgWidth = ctx.canvas.width;
   const svgHeight = ctx.canvas.height;
-  const margin = { top: 20, right: 30, bottom: 30, left: 40 };
+  const margin = { top: 20, right: 100, bottom: 30, left: 100 };
   const width = svgWidth - margin.left - margin.right;
   const height = svgHeight - margin.top - margin.bottom;
 
-  // Agrupamento dos dados por tempo
-  const groupedData = d3.group(dadosOriginais, (d) => d[parametro_busca]);
-  const tempos = Array.from(groupedData.keys()).sort();
-
-  // Configuração de escalas
-  const x = d3.scaleLinear().range([0, width]);
-  const y = d3.scaleBand().range([0, height]).padding(0.1);
-  const color = d3.scaleOrdinal().range(backgroundColor);
-
-  // Elemento SVG
   const svg = d3
-    .select(ctx.canvas.parentNode)
+    .select(wrapper)
     .append('svg')
     .attr('width', svgWidth)
     .attr('height', svgHeight)
     .append('g')
     .attr('transform', `translate(${margin.left},${margin.top})`);
 
-  // Função para atualizar o gráfico com base no tempo
-  function update(tempo) {
-    const data = groupedData.get(tempo) || [];
+  const x = d3.scaleLinear().range([0, width]);
+  const y = d3.scaleBand().range([0, height]).padding(0.1);
+  const color = d3.scaleOrdinal().domain(allCategories).range(backgroundColor);
+
+  let intervalId;
+  let currentIndex = 0;
+  const btn = document.createElement('button');
+  btn.textContent = 'Pause';
+  btn.style.margin = '10px';
+  wrapper.insertBefore(btn, wrapper.firstChild);
+  btn.addEventListener('click', function () {
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+      btn.textContent = 'Play';
+    } else {
+      btn.textContent = 'Pause';
+      intervalId = setInterval(nextFrame, 2000);
+    }
+  });
+
+  function renderFrame(time) {
+    const dataObj = groupedByTime[time] || {};
+    const data = Object.keys(dataObj).map((key) => ({
+      nome: key,
+      valor: dataObj[key],
+    }));
+    data.sort((a, b) => b.valor - a.valor);
 
     x.domain([0, d3.max(data, (d) => d.valor) || 1]);
     y.domain(data.map((d) => d.nome));
 
-    // Renderizar barras
     const bars = svg.selectAll('.bar').data(data, (d) => d.nome);
-
     bars
       .enter()
       .append('rect')
       .attr('class', 'bar')
       .attr('x', 0)
       .attr('y', (d) => y(d.nome))
-      .attr('width', (d) => x(d.valor))
       .attr('height', y.bandwidth())
       .attr('fill', (d) => color(d.nome))
       .merge(bars)
@@ -1144,12 +1179,9 @@ export function criarChartRace(
       .duration(1000)
       .attr('y', (d) => y(d.nome))
       .attr('width', (d) => x(d.valor));
-
     bars.exit().remove();
 
-    // Renderizar rótulos
     const labels = svg.selectAll('.label').data(data, (d) => d.nome);
-
     labels
       .enter()
       .append('text')
@@ -1157,27 +1189,22 @@ export function criarChartRace(
       .attr('x', (d) => x(d.valor) + 5)
       .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
       .attr('dy', '0.35em')
-      .text((d) => d.valor)
       .merge(labels)
       .transition()
       .duration(1000)
       .attr('x', (d) => x(d.valor) + 5)
       .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
       .text((d) => d.valor);
-
     labels.exit().remove();
+
+    if (callback) callback({ time, data });
   }
 
-  // Animação do gráfico
-  let index = 0;
-  setInterval(() => {
-    update(tempos[index]);
-    index = (index + 1) % tempos.length;
-  }, 2000);
-
-  // Callback inicial
-  if (callback) {
-    const total = dadosOriginais.length;
-    callback({ total, variacaoTexto: null });
+  function nextFrame() {
+    renderFrame(times[currentIndex]);
+    currentIndex = (currentIndex + 1) % times.length;
   }
+
+  intervalId = setInterval(nextFrame, 2000);
+  nextFrame();
 }
