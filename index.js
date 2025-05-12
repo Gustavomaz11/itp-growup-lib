@@ -1089,7 +1089,7 @@ export function criarChartRace(
   chave,
   obj,
   callback,
-  dateField, // Novo parâmetro para campo de data
+  dateField,
 ) {
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   const wrapper = ctx.canvas.parentNode;
@@ -1106,21 +1106,24 @@ export function criarChartRace(
     return;
   }
 
+  // Agrupamento dos dados por tempo
   const groupedByTime = {};
   dadosOriginais.forEach((item) => {
     const timeKey = item[dateField].slice(0, 7); // 'YYYY-MM'
-    const cat = item[parametro_busca] || '—';
+    const category = item[parametro_busca] || '—';
     if (!groupedByTime[timeKey]) groupedByTime[timeKey] = {};
-    groupedByTime[timeKey][cat] = (groupedByTime[timeKey][cat] || 0) + 1;
+    groupedByTime[timeKey][category] =
+      (groupedByTime[timeKey][category] || 0) + 1;
   });
+
   const times = Object.keys(groupedByTime).sort(); // Ordenação cronológica
-  const allCategories = Array.from(
+  const categories = Array.from(
     new Set(dadosOriginais.map((d) => d[parametro_busca] || '—')),
   );
 
   const svgWidth = ctx.canvas.width;
   const svgHeight = ctx.canvas.height;
-  const margin = { top: 20, right: 100, bottom: 30, left: 100 };
+  const margin = { top: 20, right: 100, bottom: 30, left: 200 };
   const width = svgWidth - margin.left - margin.right;
   const height = svgHeight - margin.top - margin.bottom;
 
@@ -1134,14 +1137,19 @@ export function criarChartRace(
 
   const x = d3.scaleLinear().range([0, width]);
   const y = d3.scaleBand().range([0, height]).padding(0.1);
-  const color = d3.scaleOrdinal().domain(allCategories).range(backgroundColor);
+  const color = d3.scaleOrdinal().domain(categories).range(backgroundColor);
+
+  const totalDuration = 30000; // Duração total da corrida em milissegundos (30 segundos)
+  const frameDuration = totalDuration / times.length;
 
   let intervalId;
   let currentIndex = 0;
+
   const btn = document.createElement('button');
   btn.textContent = 'Pause';
   btn.style.margin = '10px';
   wrapper.insertBefore(btn, wrapper.firstChild);
+
   btn.addEventListener('click', function () {
     if (intervalId) {
       clearInterval(intervalId);
@@ -1149,7 +1157,7 @@ export function criarChartRace(
       btn.textContent = 'Play';
     } else {
       btn.textContent = 'Pause';
-      intervalId = setInterval(nextFrame, 2000);
+      intervalId = setInterval(nextFrame, frameDuration);
     }
   });
 
@@ -1164,6 +1172,7 @@ export function criarChartRace(
     x.domain([0, d3.max(data, (d) => d.valor) || 1]);
     y.domain(data.map((d) => d.nome));
 
+    // Barras
     const bars = svg.selectAll('.bar').data(data, (d) => d.nome);
     bars
       .enter()
@@ -1175,26 +1184,45 @@ export function criarChartRace(
       .attr('fill', (d) => color(d.nome))
       .merge(bars)
       .transition()
-      .duration(1000)
+      .duration(frameDuration - 100) // Reduzido para animação fluida
       .attr('y', (d) => y(d.nome))
       .attr('width', (d) => x(d.valor));
     bars.exit().remove();
 
-    const labels = svg.selectAll('.label').data(data, (d) => d.nome);
-    labels
+    // Nomes das categorias (à esquerda)
+    const labelsLeft = svg.selectAll('.label-left').data(data, (d) => d.nome);
+    labelsLeft
       .enter()
       .append('text')
-      .attr('class', 'label')
+      .attr('class', 'label-left')
+      .attr('x', -10)
+      .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
+      .attr('dy', '0.35em')
+      .attr('text-anchor', 'end')
+      .merge(labelsLeft)
+      .transition()
+      .duration(frameDuration - 100)
+      .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
+      .text((d) => d.nome);
+    labelsLeft.exit().remove();
+
+    // Valores (à direita)
+    const labelsRight = svg.selectAll('.label-right').data(data, (d) => d.nome);
+    labelsRight
+      .enter()
+      .append('text')
+      .attr('class', 'label-right')
       .attr('x', (d) => x(d.valor) + 5)
       .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
       .attr('dy', '0.35em')
-      .merge(labels)
+      .attr('text-anchor', 'start')
+      .merge(labelsRight)
       .transition()
-      .duration(1000)
+      .duration(frameDuration - 100)
       .attr('x', (d) => x(d.valor) + 5)
       .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
       .text((d) => d.valor);
-    labels.exit().remove();
+    labelsRight.exit().remove();
 
     if (callback) callback({ time, data });
   }
@@ -1202,8 +1230,9 @@ export function criarChartRace(
   function nextFrame() {
     renderFrame(times[currentIndex]);
     currentIndex = (currentIndex + 1) % times.length;
+    if (currentIndex === 0) clearInterval(intervalId); // Finaliza após 30s
   }
 
-  intervalId = setInterval(nextFrame, 2000);
+  intervalId = setInterval(nextFrame, frameDuration);
   nextFrame();
 }
