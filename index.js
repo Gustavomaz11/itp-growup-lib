@@ -76,6 +76,7 @@ const todasAsTabelas = [];
 
 /** Armazena todas as instâncias de gráfico (já existe) */
 let todosOsGraficos = [];
+window.todosOsGraficos = todosOsGraficos;
 
 // Ordem fixa de meses para garantir Janeiro→Dezembro
 const ordemMeses = [
