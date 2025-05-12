@@ -432,17 +432,22 @@ export function criarGrafico(
     // Cria e registra o gráfico
     grafico = new Chart(ctx, config);
     grafico._parametro_busca = parametro_busca;
+
+    // Registramos também o callback para uso posterior
+    const total = dadosFiltrados.length;
     todosOsGraficos.push({
       grafico,
       dadosOriginais,
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
+      callback, // Importante: armazenamos o callback
+      ultimoTotal: total, // Armazenamos o total inicial
     });
 
     // Notifica callback
     if (callback) {
-      const total = getDadosAtuais(dadosOriginais).length;
+      // Na primeira vez, não há variação para reportar
       callback({ total, variacaoTexto: null });
     }
   }
@@ -576,6 +581,7 @@ function atualizarTodosOsGraficos() {
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
+      callback, // Adicionamos acesso ao callback armazenado
     } = entry;
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     const { labels, valores } = porDuracao
@@ -588,6 +594,24 @@ function atualizarTodosOsGraficos() {
     grafico.data.labels = labels;
     grafico.data.datasets[0].data = valores;
     grafico.update();
+
+    // Verificamos se existe um callback e o chamamos com os dados atualizados
+    if (callback) {
+      const total = dadosFiltrados.length;
+      const totalAnterior = entry.ultimoTotal || total;
+
+      // Calculamos a variação percentual se possível
+      let variacaoTexto = null;
+      if (totalAnterior > 0) {
+        const variacao = ((total - totalAnterior) / totalAnterior) * 100;
+        variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
+      }
+
+      // Armazenamos o total atual para comparações futuras
+      entry.ultimoTotal = total;
+
+      callback({ total, variacaoTexto });
+    }
   });
 }
 
@@ -1079,4 +1103,199 @@ function calcularEstatisticasGrafico(dados, categoryField) {
   });
 
   return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
+}
+
+/**
+ * Função para criar um elemento de indicador KPI que atualiza conforme os filtros são aplicados
+ * @param {string} containerId - ID do elemento HTML onde o KPI será inserido
+ * @param {Array} dados - Array com os dados originais
+ * @param {string} titulo - Título do KPI
+ * @param {string} campo - Campo a ser contabilizado (opcional, se nulo conta registros)
+ * @param {string} operacao - 'count', 'sum', 'avg', 'min', 'max'
+ * @param {Function} formatador - Função para formatar o valor (opcional)
+ */
+export function criarKPI(
+  containerId,
+  dados,
+  titulo,
+  campo = null,
+  operacao = 'count',
+  formatador = null,
+) {
+  // Valores padrão
+  let valorAtual = 0;
+  let valorAnterior = null;
+
+  // Função de formatação padrão
+  const formatoPadrao = (val) => {
+    if (typeof val === 'number') {
+      if (val >= 1000) return val.toLocaleString('pt-BR');
+      if (val % 1 !== 0) return val.toFixed(2);
+    }
+    return val;
+  };
+
+  // Usar formatador personalizado ou o padrão
+  const formatarValor = formatador || formatoPadrao;
+
+  // Obter o container
+  const container = document.getElementById(containerId);
+  if (!container) {
+    console.error(`Container #${containerId} não encontrado`);
+    return;
+  }
+
+  // Criar elementos do KPI
+  container.innerHTML = '';
+  container.style.fontFamily = 'Arial, sans-serif';
+
+  const kpiCard = document.createElement('div');
+  Object.assign(kpiCard.style, {
+    padding: '20px',
+    borderRadius: '8px',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    background: 'white',
+    transition: 'all 0.3s ease',
+  });
+
+  const tituloEl = document.createElement('div');
+  tituloEl.textContent = titulo;
+  Object.assign(tituloEl.style, {
+    fontSize: '14px',
+    color: '#666',
+    marginBottom: '8px',
+  });
+
+  const valorEl = document.createElement('div');
+  Object.assign(valorEl.style, {
+    fontSize: '24px',
+    fontWeight: 'bold',
+    color: '#333',
+    transition: 'color 0.5s ease',
+  });
+
+  const variacaoEl = document.createElement('div');
+  Object.assign(variacaoEl.style, {
+    fontSize: '14px',
+    marginTop: '8px',
+    transition: 'all 0.3s ease',
+  });
+
+  kpiCard.appendChild(tituloEl);
+  kpiCard.appendChild(valorEl);
+  kpiCard.appendChild(variacaoEl);
+  container.appendChild(kpiCard);
+
+  // Função para calcular e atualizar o valor do KPI
+  function atualizar() {
+    const dadosFiltrados = getDadosAtuais(dados);
+
+    // Cálculo do novo valor baseado na operação solicitada
+    let novoValor;
+
+    switch (operacao) {
+      case 'count':
+        novoValor = dadosFiltrados.length;
+        break;
+      case 'sum':
+        novoValor = dadosFiltrados.reduce((acc, item) => {
+          const val = Number(item[campo]);
+          return acc + (isNaN(val) ? 0 : val);
+        }, 0);
+        break;
+      case 'avg':
+        const sum = dadosFiltrados.reduce((acc, item) => {
+          const val = Number(item[campo]);
+          return acc + (isNaN(val) ? 0 : val);
+        }, 0);
+        novoValor = dadosFiltrados.length > 0 ? sum / dadosFiltrados.length : 0;
+        break;
+      case 'min':
+        novoValor = dadosFiltrados.reduce((min, item) => {
+          const val = Number(item[campo]);
+          return isNaN(val) ? min : Math.min(min, val);
+        }, Infinity);
+        if (novoValor === Infinity) novoValor = 0;
+        break;
+      case 'max':
+        novoValor = dadosFiltrados.reduce((max, item) => {
+          const val = Number(item[campo]);
+          return isNaN(val) ? max : Math.max(max, val);
+        }, -Infinity);
+        if (novoValor === -Infinity) novoValor = 0;
+        break;
+      default:
+        novoValor = dadosFiltrados.length;
+    }
+
+    // Se temos um valor anterior, calculamos a variação
+    if (valorAnterior !== null) {
+      const diferenca = novoValor - valorAnterior;
+      const porcentagem =
+        valorAnterior !== 0 ? (diferenca / Math.abs(valorAnterior)) * 100 : 0;
+
+      // Atualiza o elemento de variação
+      if (porcentagem !== 0) {
+        const sinal = porcentagem > 0 ? '+' : '';
+        variacaoEl.textContent = `${sinal}${porcentagem.toFixed(2)}%`;
+        variacaoEl.style.color = porcentagem > 0 ? '#28a745' : '#dc3545';
+      } else {
+        variacaoEl.textContent = 'Sem variação';
+        variacaoEl.style.color = '#6c757d';
+      }
+
+      // Destacar visualmente a mudança
+      valorEl.style.color =
+        diferenca > 0 ? '#28a745' : diferenca < 0 ? '#dc3545' : '#333';
+      setTimeout(() => {
+        valorEl.style.color = '#333';
+      }, 1000);
+    } else {
+      variacaoEl.textContent = 'Valor inicial';
+      variacaoEl.style.color = '#6c757d';
+    }
+
+    // Atualiza o valor formatado
+    valorEl.textContent = formatarValor(novoValor);
+
+    // Guarda o valor atual para a próxima comparação
+    valorAnterior = novoValor;
+    valorAtual = novoValor;
+  }
+
+  // Primeira atualização
+  atualizar();
+
+  // Registrar para atualizações quando os filtros mudarem
+  if (!window.todosOsKPIs) window.todosOsKPIs = [];
+  window.todosOsKPIs.push({ atualizar });
+
+  // Retornamos o objeto para possíveis manipulações adicionais
+  return {
+    getValor: () => valorAtual,
+    atualizar,
+  };
+}
+
+// Função para atualizar todos os KPIs registrados
+export function atualizarTodosOsKPIs() {
+  if (window.todosOsKPIs) {
+    window.todosOsKPIs.forEach((kpi) => kpi.atualizar());
+  }
+}
+
+// Modificação na função toggleFiltro para atualizar KPIs também
+function toggleFiltro(parametro, valor) {
+  if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
+  const idx = filtrosAtuais[parametro].indexOf(valor);
+  if (idx === -1) filtrosAtuais[parametro].push(valor);
+  else {
+    filtrosAtuais[parametro].splice(idx, 1);
+    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
+  }
+
+  // atualiza tudo
+  atualizarTodosOsGraficos();
+  atualizarTodasAsTabelas();
+  atualizarTodosOsKPIs(); // Nova linha para atualizar KPIs
 }
