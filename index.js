@@ -1107,15 +1107,9 @@ function calcularEstatisticasGrafico(dados, categoryField) {
   return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
 }
 
-/**
- * Função para criar um elemento de indicador KPI que atualiza conforme os filtros são aplicados
- * @param {string} containerId - ID do elemento HTML onde o KPI será inserido
- * @param {Array} dados - Array com os dados originais
- * @param {string} titulo - Título do KPI
- * @param {string} campo - Campo a ser contabilizado (opcional, se nulo conta registros)
- * @param {string} operacao - 'count', 'sum', 'avg', 'min', 'max'
- * @param {Function} formatador - Função para formatar o valor (opcional)
- */
+// Supondo que você tenha todosOsGraficos no escopo global
+// Exemplo: window.todosOsGraficos = [];
+
 export function criarKPI(
   containerId,
   dados,
@@ -1123,12 +1117,11 @@ export function criarKPI(
   campo = null,
   operacao = 'count',
   formatador = null,
+  parametro_busca = null, // Adicionado para buscar dados do gráfico
 ) {
-  // Valores padrão
   let valorAtual = 0;
   let valorAnterior = null;
 
-  // Função de formatação padrão
   const formatoPadrao = (val) => {
     if (typeof val === 'number') {
       if (val >= 1000) return val.toLocaleString('pt-BR');
@@ -1137,17 +1130,14 @@ export function criarKPI(
     return val;
   };
 
-  // Usar formatador personalizado ou o padrão
   const formatarValor = formatador || formatoPadrao;
 
-  // Obter o container
   const container = document.getElementById(containerId);
   if (!container) {
     console.error(`Container #${containerId} não encontrado`);
     return;
   }
 
-  // Criar elementos do KPI
   container.innerHTML = '';
   container.style.fontFamily = 'Arial, sans-serif';
 
@@ -1188,11 +1178,9 @@ export function criarKPI(
   kpiCard.appendChild(variacaoEl);
   container.appendChild(kpiCard);
 
-  // Função para calcular e atualizar o valor do KPI
   function atualizar() {
     const dadosFiltrados = getDadosAtuais(dados);
 
-    // Cálculo do novo valor baseado na operação solicitada
     let novoValor;
 
     switch (operacao) {
@@ -1230,13 +1218,11 @@ export function criarKPI(
         novoValor = dadosFiltrados.length;
     }
 
-    // Se temos um valor anterior, calculamos a variação
     if (valorAnterior !== null) {
       const diferenca = novoValor - valorAnterior;
       const porcentagem =
         valorAnterior !== 0 ? (diferenca / Math.abs(valorAnterior)) * 100 : 0;
 
-      // Atualiza o elemento de variação
       if (porcentagem !== 0) {
         const sinal = porcentagem > 0 ? '+' : '';
         variacaoEl.textContent = `${sinal}${porcentagem.toFixed(2)}%`;
@@ -1246,7 +1232,6 @@ export function criarKPI(
         variacaoEl.style.color = '#6c757d';
       }
 
-      // Destacar visualmente a mudança
       valorEl.style.color =
         diferenca > 0 ? '#28a745' : diferenca < 0 ? '#dc3545' : '#333';
       setTimeout(() => {
@@ -1257,29 +1242,40 @@ export function criarKPI(
       variacaoEl.style.color = '#6c757d';
     }
 
-    // Atualiza o valor formatado
     valorEl.textContent = formatarValor(novoValor);
 
-    // Guarda o valor atual para a próxima comparação
     valorAnterior = novoValor;
     valorAtual = novoValor;
   }
 
-  // Primeira atualização
   atualizar();
 
-  // Registrar para atualizações quando os filtros mudarem
   if (!window.todosOsKPIs) window.todosOsKPIs = [];
   window.todosOsKPIs.push({ atualizar });
 
-  // Retornamos o objeto para possíveis manipulações adicionais
+  // Se desejar obter labels, valores e tipo do gráfico relacionado
+  let dadosGrafico = null;
+  if (parametro_busca && window.todosOsGraficos) {
+    const graficoItem = window.todosOsGraficos.find(
+      (g) => g.parametro_busca === parametro_busca,
+    );
+    if (graficoItem?.grafico) {
+      const { data, config } = graficoItem.grafico;
+      dadosGrafico = {
+        labels: data?.labels || [],
+        valores: data?.datasets?.[0]?.data || [],
+        tipo: config?.type || 'desconhecido',
+      };
+    }
+  }
+
   return {
     getValor: () => valorAtual,
     atualizar,
+    dadosGrafico, // <- agora disponível no retorno
   };
 }
 
-// Função para atualizar todos os KPIs registrados
 export function atualizarTodosOsKPIs() {
   if (window.todosOsKPIs) {
     window.todosOsKPIs.forEach((kpi) => kpi.atualizar());
