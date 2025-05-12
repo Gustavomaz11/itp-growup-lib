@@ -1,5 +1,7 @@
 import Chart from 'chart.js/auto';
 import { jsPDF } from 'jspdf';
+import * as d3 from 'd3';
+
 import html2canvas from 'html2canvas';
 
 // —————————————————————————————————————————————————————————————————————————————————
@@ -1078,4 +1080,104 @@ function calcularEstatisticasGrafico(dados, categoryField) {
   });
 
   return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
+}
+
+export function criarChartRace(
+  ctx,
+  parametro_busca,
+  backgroundColor,
+  chave,
+  obj,
+  callback,
+  porDuracao = true,
+  parametro_busca_fim = null,
+) {
+  // Cópia imutável dos dados originais
+  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
+
+  // Configurações iniciais
+  const svgWidth = ctx.canvas.width;
+  const svgHeight = ctx.canvas.height;
+  const margin = { top: 20, right: 30, bottom: 30, left: 40 };
+  const width = svgWidth - margin.left - margin.right;
+  const height = svgHeight - margin.top - margin.bottom;
+
+  // Agrupamento dos dados por tempo
+  const groupedData = d3.group(dadosOriginais, (d) => d[parametro_busca]);
+  const tempos = Array.from(groupedData.keys()).sort();
+
+  // Configuração de escalas
+  const x = d3.scaleLinear().range([0, width]);
+  const y = d3.scaleBand().range([0, height]).padding(0.1);
+  const color = d3.scaleOrdinal().range(backgroundColor);
+
+  // Elemento SVG
+  const svg = d3
+    .select(ctx.canvas.parentNode)
+    .append('svg')
+    .attr('width', svgWidth)
+    .attr('height', svgHeight)
+    .append('g')
+    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Função para atualizar o gráfico com base no tempo
+  function update(tempo) {
+    const data = groupedData.get(tempo) || [];
+
+    x.domain([0, d3.max(data, (d) => d.valor) || 1]);
+    y.domain(data.map((d) => d.nome));
+
+    // Renderizar barras
+    const bars = svg.selectAll('.bar').data(data, (d) => d.nome);
+
+    bars
+      .enter()
+      .append('rect')
+      .attr('class', 'bar')
+      .attr('x', 0)
+      .attr('y', (d) => y(d.nome))
+      .attr('width', (d) => x(d.valor))
+      .attr('height', y.bandwidth())
+      .attr('fill', (d) => color(d.nome))
+      .merge(bars)
+      .transition()
+      .duration(1000)
+      .attr('y', (d) => y(d.nome))
+      .attr('width', (d) => x(d.valor));
+
+    bars.exit().remove();
+
+    // Renderizar rótulos
+    const labels = svg.selectAll('.label').data(data, (d) => d.nome);
+
+    labels
+      .enter()
+      .append('text')
+      .attr('class', 'label')
+      .attr('x', (d) => x(d.valor) + 5)
+      .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
+      .attr('dy', '0.35em')
+      .text((d) => d.valor)
+      .merge(labels)
+      .transition()
+      .duration(1000)
+      .attr('x', (d) => x(d.valor) + 5)
+      .attr('y', (d) => y(d.nome) + y.bandwidth() / 2)
+      .text((d) => d.valor);
+
+    labels.exit().remove();
+  }
+
+  // Animação do gráfico
+  let index = 0;
+  setInterval(() => {
+    update(tempos[index]);
+    index = (index + 1) % tempos.length;
+  }, 2000);
+
+  // Callback inicial
+  if (callback) {
+    const total = dadosOriginais.length;
+    callback({ total, variacaoTexto: null });
+  }
 }
