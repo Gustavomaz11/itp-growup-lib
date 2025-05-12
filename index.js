@@ -1,6 +1,5 @@
 import Chart from 'chart.js/auto';
 import { jsPDF } from 'jspdf';
-import * as d3 from 'd3';
 
 import html2canvas from 'html2canvas';
 
