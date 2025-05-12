@@ -559,6 +559,7 @@ export function criarGrafico(
   });
 }
 
+// Modificação na função toggleFiltro para atualizar KPIs também
 function toggleFiltro(parametro, valor) {
   if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
   const idx = filtrosAtuais[parametro].indexOf(valor);
@@ -571,6 +572,7 @@ function toggleFiltro(parametro, valor) {
   // atualiza tudo
   atualizarTodosOsGraficos();
   atualizarTodasAsTabelas();
+  atualizarTodosOsKPIs(); // Nova linha para atualizar KPIs
 }
 
 function atualizarTodosOsGraficos() {
@@ -1282,20 +1284,4 @@ export function atualizarTodosOsKPIs() {
   if (window.todosOsKPIs) {
     window.todosOsKPIs.forEach((kpi) => kpi.atualizar());
   }
-}
-
-// Modificação na função toggleFiltro para atualizar KPIs também
-function toggleFiltro(parametro, valor) {
-  if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
-  const idx = filtrosAtuais[parametro].indexOf(valor);
-  if (idx === -1) filtrosAtuais[parametro].push(valor);
-  else {
-    filtrosAtuais[parametro].splice(idx, 1);
-    if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
-  }
-
-  // atualiza tudo
-  atualizarTodosOsGraficos();
-  atualizarTodasAsTabelas();
-  atualizarTodosOsKPIs(); // Nova linha para atualizar KPIs
 }
