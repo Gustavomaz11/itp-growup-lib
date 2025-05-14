@@ -1106,3 +1106,104 @@ function calcularEstatisticasGrafico(dados, categoryField) {
 
   return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
 }
+
+/**
+ * Cria um gráfico de bolhas que reage aos filtros aplicados.
+ * @param {HTMLElement} ctx - Contexto do canvas onde o gráfico será renderizado.
+ * @param {string} eixoX - Campo do eixo X.
+ * @param {string} eixoY - Campo do eixo Y.
+ * @param {string} raio - Campo que define o tamanho das bolhas.
+ * @param {Array} dadosOriginais - Dados de entrada para o gráfico.
+ * @param {Array<string>} cores - Array de cores para as bolhas.
+ */
+export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores) {
+  const dadosOriginaisCopy = [...dadosOriginais]; // Mantém os dados originais imutáveis
+  let grafico;
+
+  // Converte strings para números com base na contagem de ocorrências
+  function converterParaNumeros(dados, campo) {
+    const contagem = {};
+    let contador = 1;
+
+    dados.forEach((item) => {
+      const valor = item[campo];
+      if (!(valor in contagem)) {
+        contagem[valor] = contador++;
+      }
+    });
+
+    return (valor) => contagem[valor] || 0;
+  }
+
+  function renderizarBolhas() {
+    const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
+
+    // Verifica se os campos são strings e os converte se necessário
+    const isXString = dadosFiltrados.some((item) => isNaN(parseFloat(item[eixoX])));
+    const isYString = dadosFiltrados.some((item) => isNaN(parseFloat(item[eixoY])));
+    const isRaioString = dadosFiltrados.some((item) => isNaN(parseFloat(item[raio])));
+
+    const xConverter = isXString ? converterParaNumeros(dadosFiltrados, eixoX) : (v) => parseFloat(v) || 0;
+    const yConverter = isYString ? converterParaNumeros(dadosFiltrados, eixoY) : (v) => parseFloat(v) || 0;
+    const raioConverter = isRaioString ? converterParaNumeros(dadosFiltrados, raio) : (v) => parseFloat(v) || 5;
+
+    // Processa os dados para criar os pontos do gráfico
+    const dadosGrafico = dadosFiltrados.map((item, index) => ({
+      x: xConverter(item[eixoX]),
+      y: yConverter(item[eixoY]),
+      r: raioConverter(item[raio]),
+      backgroundColor: cores[index % cores.length], // Cicla pelas cores fornecidas
+    }));
+
+    if (grafico) {
+      // Atualiza o gráfico existente
+      grafico.data.datasets[0].data = dadosGrafico;
+      grafico.update();
+    } else {
+      // Configuração inicial do gráfico de bolhas
+      const config = {
+        type: 'bubble',
+        data: {
+          datasets: [
+            {
+              label: `Gráfico de Bolhas (${eixoX}, ${eixoY}, ${raio})`,
+              data: dadosGrafico,
+              backgroundColor: dadosGrafico.map((d) => d.backgroundColor),
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: eixoX,
+              },
+              beginAtZero: true,
+            },
+            y: {
+              title: {
+                display: true,
+                text: eixoY,
+              },
+              beginAtZero: true,
+            },
+          },
+        },
+      };
+
+      // Cria o gráfico
+      grafico = new Chart(ctx, config);
+    }
+  }
+
+  // Renderiza pela primeira vez
+  renderizarBolhas();
+
+  // Registra o gráfico para reagir a atualizações globais
+  todosOsGraficos.push({
+    grafico,
+    renderizar: renderizarBolhas, // Define o método de renderização para atualizações
+  });
+}
