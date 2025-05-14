@@ -583,36 +583,45 @@ function atualizarTodosOsGraficos() {
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
-      callback, // Adicionamos acesso ao callback armazenado
+      callback,
+      renderizar, // Suporte a gráficos que possuem renderização personalizada
     } = entry;
-    const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    const { labels, valores } = porDuracao
-      ? processarDados(dadosFiltrados, parametro_busca)
-      : processarDuracaoAtendimentos(
-          dadosFiltrados,
-          parametro_busca,
-          parametro_busca_fim,
-        );
-    grafico.data.labels = labels;
-    grafico.data.datasets[0].data = valores;
-    grafico.update();
 
-    // Verificamos se existe um callback e o chamamos com os dados atualizados
-    if (callback) {
-      const total = dadosFiltrados.length;
-      const totalAnterior = entry.ultimoTotal || total;
+    if (renderizar) {
+      // Caso o gráfico possua um método de renderização, chamamos ele diretamente
+      renderizar();
+    } else {
+      // Lógica padrão para gráficos criados com `criarGrafico`
+      const dadosFiltrados = getDadosAtuais(dadosOriginais);
+      const { labels, valores } = porDuracao
+        ? processarDados(dadosFiltrados, parametro_busca)
+        : processarDuracaoAtendimentos(
+            dadosFiltrados,
+            parametro_busca,
+            parametro_busca_fim,
+          );
 
-      // Calculamos a variação percentual se possível
-      let variacaoTexto = null;
-      if (totalAnterior > 0) {
-        const variacao = ((total - totalAnterior) / totalAnterior) * 100;
-        variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
+      grafico.data.labels = labels;
+      grafico.data.datasets[0].data = valores;
+      grafico.update();
+
+      // Chamamos o callback se ele existir
+      if (callback) {
+        const total = dadosFiltrados.length;
+        const totalAnterior = entry.ultimoTotal || total;
+
+        // Calculamos a variação percentual se possível
+        let variacaoTexto = null;
+        if (totalAnterior > 0) {
+          const variacao = ((total - totalAnterior) / totalAnterior) * 100;
+          variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
+        }
+
+        // Armazenamos o total atual para comparações futuras
+        entry.ultimoTotal = total;
+
+        callback({ total, variacaoTexto });
       }
-
-      // Armazenamos o total atual para comparações futuras
-      entry.ultimoTotal = total;
-
-      callback({ total, variacaoTexto });
     }
   });
 }
