@@ -1216,3 +1216,99 @@ export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores
     renderizar: renderizarBolhas, // Define o método de renderização para atualizações
   });
 }
+
+/**
+ * Cria um gráfico misto (barra + linha) que reage a filtros globais.
+ * @param {HTMLCanvasElement} ctx - Contexto do canvas onde será renderizado.
+ * @param {string} eixoX - Campo para o eixo X (string ou número).
+ * @param {string} eixoY - Campo para o eixo Y (números).
+ * @param {Array<Object>} obj - Array de dados originais.
+ * @param {string} titulo - Título do gráfico.
+ */
+export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
+  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
+  let grafico;
+
+  function renderizar() {
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    const agrupado = {};
+
+    dadosFiltrados.forEach((item) => {
+      const label = item[eixoX];
+      const valor = parseFloat(item[eixoY]);
+      if (!label || isNaN(valor)) return;
+
+      if (!agrupado[label]) {
+        agrupado[label] = { soma: 0, count: 0 };
+      }
+
+      agrupado[label].soma += valor;
+      agrupado[label].count += 1;
+    });
+
+    const labels = Object.keys(agrupado);
+    const soma = labels.map((l) => agrupado[l].soma);
+    const media = labels.map((l) => agrupado[l].soma / agrupado[l].count);
+
+    if (grafico) {
+      grafico.destroy();
+    }
+
+    grafico = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Soma de ' + eixoY,
+            data: soma,
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1,
+          },
+          {
+            type: 'line',
+            label: 'Média de ' + eixoY,
+            data: media,
+            borderColor: 'rgba(255, 99, 132, 1)',
+            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          title: {
+            display: !!titulo,
+            text: titulo,
+          },
+          legend: {
+            position: 'top',
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+
+  // Primeiro render
+  renderizar();
+
+  // Registra para reagir aos filtros globais
+  todosOsGraficos.push({
+    grafico,
+    dadosOriginais,
+    renderizar,
+  });
+}
+
+
+
