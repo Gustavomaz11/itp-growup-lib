@@ -389,7 +389,9 @@ export function criarGrafico(
           {
             label: chave,
             data: valores,
-            backgroundColor: backgroundColor.slice(0, labels.length),
+            backgroundColor: Array.isArray(backgroundColor)
+              ? backgroundColor.slice(0, labels.length)
+              : backgroundColor || 'rgba(0,0,0,0.1)',
             borderWidth: 1,
           },
         ],
