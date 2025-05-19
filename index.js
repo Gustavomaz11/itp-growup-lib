@@ -847,214 +847,46 @@ function humanize(str) {
   return str.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-async function gerarRelatorio(dadosOriginais) {
-  showLoadingSpinner();
-  try {
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    let cursorY = 40;
-
-    // --- Cabeçalho ---
-    doc.setFontSize(18);
-    doc.text('Relatório de Projeções e Resultados', 40, cursorY);
-    cursorY += 25;
-    doc.setDrawColor(0, 0, 0);
-    doc.line(40, cursorY, 555, cursorY);
-    cursorY += 20;
-    doc.setFontSize(11);
-    doc.text(
-      'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
-      40,
-      cursorY,
-    );
-    cursorY += 30;
-
-    const entries = todosOsGraficos;
-    const total = entries.length;
-    const tarefas = entries.map(
-      ({ grafico, dadosOriginais, parametro_busca }) => {
-        const imgData = grafico.toBase64Image();
-        const imgW = 515;
-        const imgH = (grafico.height / grafico.width) * imgW;
-        const stats = calcularEstatisticasGrafico(
-          dadosOriginais,
-          parametro_busca,
-        );
-        return { grafico, imgData, imgW, imgH, stats };
-      },
-    );
-
-    for (let i = 0; i < total; i++) {
-      const { grafico, imgData, imgW, imgH, stats } = tarefas[i];
-      // paginação
-      if (cursorY + imgH > 780) {
-        doc.addPage();
-        cursorY = 40;
-      }
-      // gráfico
-      doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
-      cursorY += imgH + 10;
-
-      // tabela de valores
-      const labels = grafico.data.labels;
-      const valores = grafico.data.datasets[0].data;
-      doc.setFontSize(11);
-      labels.forEach((lab, j) => {
-        if (cursorY > 780) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.text(`${lab}: ${valores[j]} atendimentos`, 40, cursorY);
-        cursorY += 14;
-      });
-      cursorY += 10;
-
-      const labelGraf = grafico.data.datasets[0].label;
-      if (labelGraf === 'SLA') {
-        // SLA ano-a-ano por bin
-        doc.setFontSize(12);
-        doc.text('SLA – Variação Ano a Ano por Faixa de Tempo:', 40, cursorY);
-        cursorY += 18;
-        stats.statsPorCategoria.forEach((bin) => {
-          if (cursorY > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          const trecho =
-            (bin.categoria.match(/> *([^<]+)/) || [])[1] || bin.categoria;
-          doc.setFontSize(11);
-          doc.text(
-            `> ${trecho.trim()}: ${bin.variacaoAno.toFixed(2)}%`,
-            60,
-            cursorY,
-          );
-          cursorY += 14;
-        });
-        cursorY += 20;
-        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
-        continue;
-      }
-
-      // bloco: variação ano-a-ano total
-      if (cursorY > 760) {
-        doc.addPage();
-        cursorY = 40;
-      }
-      doc.setFontSize(12);
-      doc.text(
-        `Variação Ano a Ano (${stats.anoAnterior} → ${stats.anoRecente}):`,
-        40,
-        cursorY,
-      );
-      cursorY += 18;
-      stats.statsPorCategoria.forEach((cat) => {
-        if (cursorY > 780) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(11);
-        doc.text(
-          `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
-          60,
-          cursorY,
-        );
-        cursorY += 14;
-      });
-      cursorY += 20;
-
-      // bloco: variação mês-a-mês ano-a-ano
-      if (cursorY > 760) {
-        doc.addPage();
-        cursorY = 40;
-      }
-      doc.setFontSize(12);
-      doc.text(
-        `Variação Mês a Mês (${stats.anoAnterior} → ${stats.anoRecente}):`,
-        40,
-        cursorY,
-      );
-      cursorY += 18;
-      stats.statsPorCategoria.forEach((cat) => {
-        if (cursorY > 780) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(11);
-        doc.text(`Categoria ${cat.categoria}:`, 60, cursorY);
-        cursorY += 14;
-        cat.variacaoMeses.forEach((m) => {
-          if (cursorY > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          doc.text(`   ${m.mes}: ${m.variacao.toFixed(2)}%`, 80, cursorY);
-          cursorY += 14;
-        });
-        cursorY += 10;
-      });
-      cursorY += 20;
-
-      // **novo** bloco: variação mês-a-mês (relativo ao mês anterior)
-      if (cursorY > 760) {
-        doc.addPage();
-        cursorY = 40;
-      }
-      doc.setFontSize(12);
-      doc.text(
-        `Variação em Relação ao Mês Anterior (${stats.anoRecente}):`,
-        40,
-        cursorY,
-      );
-      cursorY += 18;
-      stats.statsPorCategoria.forEach((cat) => {
-        if (cursorY > 780) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(11);
-        doc.text(`Categoria ${cat.categoria}:`, 60, cursorY);
-        cursorY += 14;
-        cat.variacaoMensal.forEach((m) => {
-          if (cursorY > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          doc.text(`   ${m.mes}: ${m.variacao.toFixed(2)}%`, 80, cursorY);
-          cursorY += 14;
-        });
-        cursorY += 10;
-      });
-      cursorY += 20;
-
-      updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
-    }
-
-    doc.save('Relatorio_Visual_Completo.pdf');
-  } finally {
-    hideLoadingSpinner();
-  }
-}
-
 /**
- * Calcula estatísticas para cada categoria de um gráfico:
- *  • variacaoAno       → % de variação total ano-a-ano
- *  • variacaoMeses     → % de variação mês-a--mês ano-a-ano
- *  • variacaoMensal    → % de variação mês-a-mês dentro do ano mais recente
+ * Calcula estatísticas para cada categoria de um gráfico com validação robusta de dados
  */
 function calcularEstatisticasGrafico(dados, categoryField) {
-  // 1) Detecta campo de data
-  const dateField = Object.keys(dados[0] || {}).find((f) =>
-    /^\d{4}-\d{2}-\d{2}/.test(dados[0][f]),
-  );
-  if (!dateField)
-    return { anoRecente: null, anoAnterior: null, statsPorCategoria: [] };
+  // Verificação de segurança para evitar erros quando dados estão vazios
+  if (!dados || !Array.isArray(dados) || dados.length === 0) {
+    return {
+      anoRecente: null,
+      anoAnterior: null,
+      statsPorCategoria: [],
+    };
+  }
 
-  // 2) Conta ocorrências por ESCALA year|month|category
+  // 1) Detecta campo de data com verificação de segurança
+  const dateField = dados[0]
+    ? Object.keys(dados[0]).find(
+        (f) =>
+          dados[0][f] &&
+          typeof dados[0][f] === 'string' &&
+          /^\d{4}-\d{2}-\d{2}/.test(dados[0][f]),
+      )
+    : null;
+
+  if (!dateField) {
+    return {
+      anoRecente: null,
+      anoAnterior: null,
+      statsPorCategoria: [],
+    };
+  }
+
+  // 2) Conta ocorrências por ESCALA year|month|category com validação
   const counts = {};
   dados.forEach((item) => {
+    if (!item || !item[dateField]) return;
+
     const dt = item[dateField];
-    const year = dt.slice(0, 4),
-      month = dt.slice(5, 7),
-      cat = item[categoryField] || '—';
+    const year = dt.slice(0, 4);
+    const month = dt.slice(5, 7);
+    const cat = item[categoryField] || '—';
     const key = `${year}|${month}|${cat}`;
     counts[key] = (counts[key] || 0) + 1;
   });
@@ -1063,10 +895,17 @@ function calcularEstatisticasGrafico(dados, categoryField) {
   const anos = Array.from(
     new Set(Object.keys(counts).map((k) => k.split('|')[0])),
   ).sort();
-  if (anos.length < 2)
-    return { anoRecente: anos.pop(), anoAnterior: null, statsPorCategoria: [] };
-  const anoRec = anos.pop(),
-    anoAnt = anos.pop();
+
+  if (anos.length < 2) {
+    return {
+      anoRecente: anos.length > 0 ? anos[anos.length - 1] : null,
+      anoAnterior: null,
+      statsPorCategoria: [],
+    };
+  }
+
+  const anoRec = anos[anos.length - 1];
+  const anoAnt = anos[anos.length - 2];
   const categorias = Array.from(
     new Set(Object.keys(counts).map((k) => k.split('|')[2])),
   );
@@ -1089,6 +928,7 @@ function calcularEstatisticasGrafico(dados, categoryField) {
       totaisMesAnt.push(ant);
       totalRec += rec;
       totalAnt += ant;
+
       // variação ano-a-ano por mês:
       const vYA = ant ? ((rec - ant) / ant) * 100 : 0;
       variacaoMeses.push({ mes: nome, variacao: vYA });
@@ -1119,6 +959,337 @@ function calcularEstatisticasGrafico(dados, categoryField) {
   });
 
   return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
+}
+
+/**
+ * Gera um relatório PDF com verificações robustas para evitar erros
+ */
+
+async function gerarRelatorio(dadosOriginais) {
+  showLoadingSpinner();
+  try {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    let cursorY = 40;
+
+    // --- Cabeçalho ---
+    doc.setFontSize(18);
+    doc.text('Relatório de Projeções e Resultados', 40, cursorY);
+    cursorY += 25;
+    doc.setDrawColor(0, 0, 0);
+    doc.line(40, cursorY, 555, cursorY);
+    cursorY += 20;
+    doc.setFontSize(11);
+    doc.text(
+      'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
+      40,
+      cursorY,
+    );
+    cursorY += 30;
+
+    // Verificações de segurança para todosOsGraficos
+    if (
+      !todosOsGraficos ||
+      !Array.isArray(todosOsGraficos) ||
+      todosOsGraficos.length === 0
+    ) {
+      doc.text(
+        'Não há gráficos disponíveis para inclusão no relatório.',
+        40,
+        cursorY,
+      );
+      doc.save('Relatorio_Visual_Sem_Graficos.pdf');
+      return;
+    }
+
+    const entries = todosOsGraficos.filter(
+      (entry) =>
+        entry && entry.grafico && entry.dadosOriginais && entry.parametro_busca,
+    );
+
+    if (entries.length === 0) {
+      doc.text(
+        'Não foram encontrados gráficos válidos para o relatório.',
+        40,
+        cursorY,
+      );
+      doc.save('Relatorio_Visual_Sem_Graficos.pdf');
+      return;
+    }
+
+    const total = entries.length;
+    let tarefas = [];
+
+    // Prepara as imagens e estatísticas com validação
+    for (const entry of entries) {
+      try {
+        if (
+          !entry.grafico ||
+          typeof entry.grafico.toBase64Image !== 'function'
+        ) {
+          continue;
+        }
+
+        const imgData = entry.grafico.toBase64Image();
+        const imgW = 515;
+        const imgH = (entry.grafico.height / entry.grafico.width) * imgW;
+
+        const stats = calcularEstatisticasGrafico(
+          entry.dadosOriginais || [],
+          entry.parametro_busca || '',
+        );
+
+        tarefas.push({ grafico: entry.grafico, imgData, imgW, imgH, stats });
+      } catch (err) {
+        console.error('Erro ao processar gráfico:', err);
+        // Continuamos com os outros gráficos em caso de erro
+      }
+    }
+
+    // Se depois da validação não sobrar nenhum gráfico válido
+    if (tarefas.length === 0) {
+      doc.text(
+        'Os gráficos disponíveis não puderam ser processados corretamente.',
+        40,
+        cursorY,
+      );
+      doc.save('Relatorio_Visual_Sem_Dados.pdf');
+      return;
+    }
+
+    for (let i = 0; i < tarefas.length; i++) {
+      const { grafico, imgData, imgW, imgH, stats } = tarefas[i];
+
+      // Validação de segurança para grafico
+      if (
+        !grafico ||
+        !grafico.data ||
+        !grafico.data.labels ||
+        !grafico.data.datasets ||
+        !grafico.data.datasets[0] ||
+        !grafico.data.datasets[0].data
+      ) {
+        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
+        continue;
+      }
+
+      // paginação
+      if (cursorY + imgH > 780) {
+        doc.addPage();
+        cursorY = 40;
+      }
+
+      // gráfico
+      try {
+        doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
+        cursorY += imgH + 10;
+      } catch (err) {
+        console.error('Erro ao adicionar imagem:', err);
+        doc.text('Erro ao gerar imagem do gráfico', 40, cursorY);
+        cursorY += 20;
+      }
+
+      // tabela de valores
+      const labels = grafico.data.labels || [];
+      const valores = grafico.data.datasets[0].data || [];
+      doc.setFontSize(11);
+      labels.forEach((lab, j) => {
+        if (cursorY > 780) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.text(`${lab}: ${valores[j]} atendimentos`, 40, cursorY);
+        cursorY += 14;
+      });
+      cursorY += 10;
+
+      const labelGraf = grafico.data.datasets[0].label || '';
+      if (labelGraf === 'SLA') {
+        // SLA ano-a-ano por bin
+        if (
+          stats &&
+          stats.statsPorCategoria &&
+          Array.isArray(stats.statsPorCategoria)
+        ) {
+          doc.setFontSize(12);
+          doc.text('SLA – Variação Ano a Ano por Faixa de Tempo:', 40, cursorY);
+          cursorY += 18;
+
+          stats.statsPorCategoria.forEach((bin) => {
+            if (!bin || typeof bin.categoria !== 'string') return;
+
+            if (cursorY > 780) {
+              doc.addPage();
+              cursorY = 40;
+            }
+
+            // Extrai o trecho com validação
+            let trecho = '';
+            const match = bin.categoria.match(/> *([^<]+)/);
+            if (match && match[1]) {
+              trecho = match[1];
+            } else {
+              trecho = bin.categoria;
+            }
+
+            doc.setFontSize(11);
+            doc.text(
+              `> ${trecho.trim()}: ${bin.variacaoAno.toFixed(2)}%`,
+              60,
+              cursorY,
+            );
+            cursorY += 14;
+          });
+          cursorY += 20;
+        }
+
+        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
+        continue;
+      }
+
+      // Verificações para estatísticas
+      if (
+        !stats ||
+        !stats.statsPorCategoria ||
+        !Array.isArray(stats.statsPorCategoria)
+      ) {
+        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
+        continue;
+      }
+
+      // bloco: variação ano-a-ano total
+      if (stats.anoAnterior && stats.anoRecente) {
+        if (cursorY > 760) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.setFontSize(12);
+        doc.text(
+          `Variação Ano a Ano (${stats.anoAnterior} → ${stats.anoRecente}):`,
+          40,
+          cursorY,
+        );
+        cursorY += 18;
+
+        stats.statsPorCategoria.forEach((cat) => {
+          if (!cat || typeof cat.categoria !== 'string') return;
+
+          if (cursorY > 780) {
+            doc.addPage();
+            cursorY = 40;
+          }
+          doc.setFontSize(11);
+          doc.text(
+            `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
+            60,
+            cursorY,
+          );
+          cursorY += 14;
+        });
+        cursorY += 20;
+
+        // bloco: variação mês-a-mês ano-a-ano
+        if (cursorY > 760) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.setFontSize(12);
+        doc.text(
+          `Variação Mês a Mês (${stats.anoAnterior} → ${stats.anoRecente}):`,
+          40,
+          cursorY,
+        );
+        cursorY += 18;
+
+        stats.statsPorCategoria.forEach((cat) => {
+          if (!cat || !cat.variacaoMeses || !Array.isArray(cat.variacaoMeses))
+            return;
+
+          if (cursorY > 780) {
+            doc.addPage();
+            cursorY = 40;
+          }
+          doc.setFontSize(11);
+          doc.text(`Categoria ${cat.categoria}:`, 60, cursorY);
+          cursorY += 14;
+
+          cat.variacaoMeses.forEach((m) => {
+            if (!m || typeof m.mes !== 'string') return;
+
+            if (cursorY > 780) {
+              doc.addPage();
+              cursorY = 40;
+            }
+            doc.text(`   ${m.mes}: ${m.variacao.toFixed(2)}%`, 80, cursorY);
+            cursorY += 14;
+          });
+          cursorY += 10;
+        });
+        cursorY += 20;
+
+        // bloco: variação mês-a-mês (relativo ao mês anterior)
+        if (cursorY > 760) {
+          doc.addPage();
+          cursorY = 40;
+        }
+        doc.setFontSize(12);
+        doc.text(
+          `Variação em Relação ao Mês Anterior (${stats.anoRecente}):`,
+          40,
+          cursorY,
+        );
+        cursorY += 18;
+
+        stats.statsPorCategoria.forEach((cat) => {
+          if (!cat || !cat.variacaoMensal || !Array.isArray(cat.variacaoMensal))
+            return;
+
+          if (cursorY > 780) {
+            doc.addPage();
+            cursorY = 40;
+          }
+          doc.setFontSize(11);
+          doc.text(`Categoria ${cat.categoria}:`, 60, cursorY);
+          cursorY += 14;
+
+          cat.variacaoMensal.forEach((m) => {
+            if (!m || typeof m.mes !== 'string') return;
+
+            if (cursorY > 780) {
+              doc.addPage();
+              cursorY = 40;
+            }
+            doc.text(`   ${m.mes}: ${m.variacao.toFixed(2)}%`, 80, cursorY);
+            cursorY += 14;
+          });
+          cursorY += 10;
+        });
+        cursorY += 20;
+      }
+
+      updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
+    }
+
+    doc.save('Relatorio_Visual_Completo.pdf');
+  } catch (error) {
+    console.error('Erro ao gerar relatório:', error);
+    // Mostra mensagem de erro na página
+    const errorDiv = document.createElement('div');
+    errorDiv.style.color = 'red';
+    errorDiv.style.padding = '10px';
+    errorDiv.style.margin = '10px 0';
+    errorDiv.style.border = '1px solid red';
+    errorDiv.textContent = `Erro ao gerar relatório: ${error.message}. Tente novamente mais tarde.`;
+    document.body.appendChild(errorDiv);
+
+    // Remove após 10 segundos
+    setTimeout(() => {
+      if (errorDiv.parentNode) {
+        errorDiv.parentNode.removeChild(errorDiv);
+      }
+    }, 10000);
+  } finally {
+    hideLoadingSpinner();
+  }
 }
 
 /**
