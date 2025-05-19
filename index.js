@@ -408,7 +408,10 @@ export function criarGrafico(
                 const ds = chart.data.datasets[0];
                 return chart.data.labels.map((lab, i) => ({
                   text: lab,
-                  fillStyle: ds.backgroundColor[i],
+                  // Proteção para o caso de backgroundColor não estar definido ou ter tamanho menor:
+                  fillStyle: Array.isArray(ds.backgroundColor)
+                    ? ds.backgroundColor[i] || 'rgba(0,0,0,0.1)'
+                    : ds.backgroundColor || 'rgba(0,0,0,0.1)',
                   hidden: !chart.getDataVisibility(i),
                   index: i,
                 }));
