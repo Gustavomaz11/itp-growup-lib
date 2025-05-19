@@ -1,8 +1,3 @@
-import Chart from 'chart.js/auto';
-import { jsPDF } from 'jspdf';
-
-import html2canvas from 'html2canvas';
-
 // —————————————————————————————————————————————————————————————————————————————————
 // 1) ESTILOS E FUNÇÕES PARA O SPINNER
 // —————————————————————————————————————————————————————————————————————————————————
@@ -583,36 +578,45 @@ function atualizarTodosOsGraficos() {
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
-      callback, // Adicionamos acesso ao callback armazenado
+      callback,
+      renderizar, // Suporte a gráficos que possuem renderização personalizada
     } = entry;
-    const dadosFiltrados = getDadosAtuais(dadosOriginais);
-    const { labels, valores } = porDuracao
-      ? processarDados(dadosFiltrados, parametro_busca)
-      : processarDuracaoAtendimentos(
-          dadosFiltrados,
-          parametro_busca,
-          parametro_busca_fim,
-        );
-    grafico.data.labels = labels;
-    grafico.data.datasets[0].data = valores;
-    grafico.update();
 
-    // Verificamos se existe um callback e o chamamos com os dados atualizados
-    if (callback) {
-      const total = dadosFiltrados.length;
-      const totalAnterior = entry.ultimoTotal || total;
+    if (renderizar) {
+      // Caso o gráfico possua um método de renderização, chamamos ele diretamente
+      renderizar();
+    } else {
+      // Lógica padrão para gráficos criados com `criarGrafico`
+      const dadosFiltrados = getDadosAtuais(dadosOriginais);
+      const { labels, valores } = porDuracao
+        ? processarDados(dadosFiltrados, parametro_busca)
+        : processarDuracaoAtendimentos(
+            dadosFiltrados,
+            parametro_busca,
+            parametro_busca_fim,
+          );
 
-      // Calculamos a variação percentual se possível
-      let variacaoTexto = null;
-      if (totalAnterior > 0) {
-        const variacao = ((total - totalAnterior) / totalAnterior) * 100;
-        variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
+      grafico.data.labels = labels;
+      grafico.data.datasets[0].data = valores;
+      grafico.update();
+
+      // Chamamos o callback se ele existir
+      if (callback) {
+        const total = dadosFiltrados.length;
+        const totalAnterior = entry.ultimoTotal || total;
+
+        // Calculamos a variação percentual se possível
+        let variacaoTexto = null;
+        if (totalAnterior > 0) {
+          const variacao = ((total - totalAnterior) / totalAnterior) * 100;
+          variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
+        }
+
+        // Armazenamos o total atual para comparações futuras
+        entry.ultimoTotal = total;
+
+        callback({ total, variacaoTexto });
       }
-
-      // Armazenamos o total atual para comparações futuras
-      entry.ultimoTotal = total;
-
-      callback({ total, variacaoTexto });
     }
   });
 }
@@ -1105,4 +1109,260 @@ function calcularEstatisticasGrafico(dados, categoryField) {
   });
 
   return { anoRecente: anoRec, anoAnterior: anoAnt, statsPorCategoria };
+}
+
+/**
+ * Cria um gráfico de bolhas que reage aos filtros aplicados.
+ * @param {HTMLElement} ctx - Contexto do canvas onde o gráfico será renderizado.
+ * @param {string} eixoX - Campo do eixo X.
+ * @param {string} eixoY - Campo do eixo Y.
+ * @param {string} raio - Campo que define o tamanho das bolhas.
+ * @param {Array} dadosOriginais - Dados de entrada para o gráfico.
+ * @param {Array<string>} cores - Array de cores para as bolhas.
+ */
+export function criarGraficoBolha(
+  ctx,
+  eixoX,
+  eixoY,
+  raio,
+  dadosOriginais,
+  cores,
+) {
+  const dadosOriginaisCopy = [...dadosOriginais]; // Mantém os dados originais imutáveis
+  let grafico;
+
+  // Converte strings para números com base na contagem de ocorrências
+  function converterParaNumeros(dados, campo) {
+    const contagem = {};
+    let contador = 1;
+
+    dados.forEach((item) => {
+      const valor = item[campo];
+      if (!(valor in contagem)) {
+        contagem[valor] = contador++;
+      }
+    });
+
+    return (valor) => contagem[valor] || 0;
+  }
+
+  function renderizarBolhas() {
+    const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
+
+    // Verifica se os campos são strings e os converte se necessário
+    const isXString = dadosFiltrados.some((item) =>
+      isNaN(parseFloat(item[eixoX])),
+    );
+    const isYString = dadosFiltrados.some((item) =>
+      isNaN(parseFloat(item[eixoY])),
+    );
+    const isRaioString = dadosFiltrados.some((item) =>
+      isNaN(parseFloat(item[raio])),
+    );
+
+    const xConverter = isXString
+      ? converterParaNumeros(dadosFiltrados, eixoX)
+      : (v) => parseFloat(v) || 0;
+    const yConverter = isYString
+      ? converterParaNumeros(dadosFiltrados, eixoY)
+      : (v) => parseFloat(v) || 0;
+    const raioConverter = isRaioString
+      ? converterParaNumeros(dadosFiltrados, raio)
+      : (v) => parseFloat(v) || 5;
+
+    // Processa os dados para criar os pontos do gráfico
+    const dadosGrafico = dadosFiltrados.map((item, index) => ({
+      x: xConverter(item[eixoX]),
+      y: yConverter(item[eixoY]),
+      r: raioConverter(item[raio]),
+      backgroundColor: cores[index % cores.length], // Cicla pelas cores fornecidas
+    }));
+
+    if (grafico) {
+      // Atualiza o gráfico existente
+      grafico.data.datasets[0].data = dadosGrafico;
+      grafico.update();
+    } else {
+      // Configuração inicial do gráfico de bolhas
+      const config = {
+        type: 'bubble',
+        data: {
+          datasets: [
+            {
+              label: `Gráfico de Bolhas (${eixoX}, ${eixoY}, ${raio})`,
+              data: dadosGrafico,
+              backgroundColor: dadosGrafico.map((d) => d.backgroundColor),
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: eixoX,
+              },
+              beginAtZero: true,
+            },
+            y: {
+              title: {
+                display: true,
+                text: eixoY,
+              },
+              beginAtZero: true,
+            },
+          },
+        },
+      };
+
+      // Cria o gráfico
+      grafico = new Chart(ctx, config);
+    }
+  }
+
+  // Renderiza pela primeira vez
+  renderizarBolhas();
+
+  // Registra o gráfico para reagir a atualizações globais
+  todosOsGraficos.push({
+    grafico,
+    renderizar: renderizarBolhas, // Define o método de renderização para atualizações
+  });
+}
+
+/**
+ * Cria um gráfico misto (barra + linha) que reage a filtros globais.
+ * @param {HTMLCanvasElement} ctx - Contexto do canvas onde será renderizado.
+ * @param {string} eixoX - Campo para o eixo X (string ou número).
+ * @param {string} eixoY - Campo para o eixo Y (números).
+ * @param {Array<Object>} obj - Array de dados originais.
+ * @param {string} titulo - Título do gráfico.
+ */
+export function criarGraficoMisto(ctx, obj, titulo = '') {
+  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
+  let grafico;
+
+  function obterMesAno(dataStr) {
+    const data = new Date(dataStr);
+    if (isNaN(data)) return null;
+    return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(
+      2,
+      '0',
+    )}`; // Ex: "2023-01"
+  }
+
+  function renderizar() {
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+
+    const contagemAtendimentosMensal = {};
+    const contagemExcelentesMensal = {};
+
+    dadosFiltrados.forEach((item) => {
+      const dataResolucao = new Date(item.data_resolucao);
+      if (isNaN(dataResolucao.getTime())) {
+        return;
+      }
+
+      const mesIndex = dataResolucao.getMonth();
+      const nomeMes = ordemMeses[mesIndex];
+
+      if (!contagemAtendimentosMensal[nomeMes]) {
+        contagemAtendimentosMensal[nomeMes] = 0;
+      }
+      if (!contagemExcelentesMensal[nomeMes]) {
+        contagemExcelentesMensal[nomeMes] = 0;
+      }
+
+      contagemAtendimentosMensal[nomeMes]++;
+
+      if (item.nota === 'Excelente') {
+        contagemExcelentesMensal[nomeMes]++;
+      }
+    });
+
+    const labels = ordemMeses;
+    const dadosBarra = labels.map(
+      (mes) => contagemAtendimentosMensal[mes] || 0,
+    );
+    const dadosLinha = labels.map((mes) => contagemExcelentesMensal[mes] || 0);
+
+    // Definir as cores das barras com transparência (RGBA)
+    const barColors = [
+      'rgba(255, 99, 132, 0.7)', // Vermelho com 70% de opacidade
+      'rgba(153, 102, 255, 0.7)', // Roxo com 70% de opacidade (exemplo de RGB para roxo)
+      'rgba(54, 162, 235, 0.7)', // Azul com 70% de opacidade
+      'rgba(255, 205, 86, 0.7)', // Amarelo com 70% de opacidade
+      'rgba(139, 69, 19, 0.7)', // Marrom com 70% de opacidade (exemplo de RGB para marrom)
+      'rgba(75, 192, 192, 0.7)', // Verde com 70% de opacidade
+      'rgba(255, 99, 132, 0.7)', // Repete Vermelho
+      'rgba(153, 102, 255, 0.7)', // Repete Roxo
+      'rgba(54, 162, 235, 0.7)', // Repete Azul
+      'rgba(255, 205, 86, 0.7)', // Repete Amarelo
+      'rgba(139, 69, 19, 0.7)', // Repete Marrom
+      'rgba(75, 192, 192, 0.7)', // Repete Verde
+    ];
+
+    if (grafico) {
+      grafico.destroy();
+    }
+
+    grafico = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            // Dataset de barras (definido primeiro)
+            type: 'bar',
+            label: 'Total de atendimentos',
+            data: dadosBarra,
+            backgroundColor: barColors, // Usar cores RGBA transparentes
+            borderColor: barColors.map((color) => color.replace('0.7', '1')), // Borda opaca (opcional)
+            borderWidth: 1,
+          },
+          {
+            // Dataset de linha (definido depois, será renderizado por cima)
+            type: 'line',
+            label: 'Notas "Excelente"',
+            data: dadosLinha,
+            borderColor: 'rgba(255, 99, 132, 1)', // Cor da linha opaca
+            backgroundColor: 'rgba(255, 99, 132, 0.3)', // Área abaixo da linha (opcionalmente transparente)
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+            yAxisID: 'y',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          title: {
+            display: !!titulo,
+            text: titulo,
+          },
+          legend: {
+            position: 'top',
+          },
+        },
+        scales: {
+          x: {
+            // Configurações do eixo X
+          },
+          y: {
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  } // Primeiro render
+
+  renderizar(); // Registra para reagir a filtros globais (se aplicável)
+
+  todosOsGraficos.push({
+    grafico,
+    dadosOriginais,
+    renderizar,
+  });
 }
