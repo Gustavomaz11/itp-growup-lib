@@ -1,3 +1,8 @@
+import Chart from 'chart.js/auto';
+import { jsPDF } from 'jspdf';
+
+import html2canvas from 'html2canvas';
+
 // —————————————————————————————————————————————————————————————————————————————————
 // 1) ESTILOS E FUNÇÕES PARA O SPINNER
 // —————————————————————————————————————————————————————————————————————————————————
