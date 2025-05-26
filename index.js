@@ -1337,86 +1337,98 @@ async function gerarRelatorio(dadosOriginais) {
 }
 
 /**
- * Cria um gráfico de bolhas que reage aos filtros aplicados.
- * @param {HTMLElement} ctx - Contexto do canvas onde o gráfico será renderizado.
- * @param {string} eixoX - Campo do eixo X.
- * @param {string} eixoY - Campo do eixo Y.
- * @param {string} raio - Campo que define o tamanho das bolhas.
- * @param {Array} dadosOriginais - Dados de entrada para o gráfico.
- * @param {Array<string>} cores - Array de cores para as bolhas.
+ * Cria um gráfico de bolhas que reage aos filtros aplicados, usando 4 campos:
+ *  - eixoX: nome do campo para o eixo X
+ *  - eixoY: nome do campo para o eixo Y
+ *  - raio:  nome do campo que define o tamanho da bolha
+ *  - corField: nome do campo que define a cor da bolha (categórico)
+ *
+ * @param {CanvasRenderingContext2D} ctx           Contexto do canvas onde o gráfico será renderizado.
+ * @param {Array<Object>}          dadosOriginais Array de objetos com todos os registros.
+ * @param {string}                 eixoX          Campo do eixo X (numérico ou categórico).
+ * @param {string}                 eixoY          Campo do eixo Y (numérico ou categórico).
+ * @param {string}                 raio           Campo numérico para o tamanho da bolha.
+ * @param {string}                 corField       Campo categórico para colorir as bolhas.
  */
 export function criarGraficoBolha(
   ctx,
+  dadosOriginais,
   eixoX,
   eixoY,
   raio,
-  dadosOriginais,
-  cores,
+  corField,
 ) {
-  const dadosOriginaisCopy = [...dadosOriginais]; // Mantém os dados originais imutáveis
+  const dadosCopy = Array.isArray(dadosOriginais)
+    ? [...dadosOriginais]
+    : dadosOriginais.slice();
   let grafico;
 
-  // Converte strings para números com base na contagem de ocorrências
+  // Converte valores categóricos em índices numéricos (1, 2, 3…)
   function converterParaNumeros(dados, campo) {
-    const contagem = {};
+    const mapa = {};
     let contador = 1;
-
     dados.forEach((item) => {
-      const valor = item[campo];
-      if (!(valor in contagem)) {
-        contagem[valor] = contador++;
+      const val = item[campo];
+      if (val != null && mapa[val] === undefined) {
+        mapa[val] = contador++;
       }
     });
-
-    return (valor) => contagem[valor] || 0;
+    return (val) => mapa[val] || 0;
   }
 
   function renderizarBolhas() {
-    const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
+    const dadosFiltrados = getDadosAtuais(dadosCopy);
 
-    // Verifica se os campos são strings e os converte se necessário
-    const isXString = dadosFiltrados.some((item) =>
-      isNaN(parseFloat(item[eixoX])),
-    );
-    const isYString = dadosFiltrados.some((item) =>
-      isNaN(parseFloat(item[eixoY])),
-    );
-    const isRaioString = dadosFiltrados.some((item) =>
-      isNaN(parseFloat(item[raio])),
-    );
-
-    const xConverter = isXString
+    // detecta se precisa converter string → número
+    const isXString = dadosFiltrados.some((item) => isNaN(+item[eixoX]));
+    const isYString = dadosFiltrados.some((item) => isNaN(+item[eixoY]));
+    const xConv = isXString
       ? converterParaNumeros(dadosFiltrados, eixoX)
       : (v) => parseFloat(v) || 0;
-    const yConverter = isYString
+    const yConv = isYString
       ? converterParaNumeros(dadosFiltrados, eixoY)
       : (v) => parseFloat(v) || 0;
-    const raioConverter = isRaioString
-      ? converterParaNumeros(dadosFiltrados, raio)
-      : (v) => parseFloat(v) || 5;
+    const rConv = (v) => Math.max(parseFloat(v) || 0, 1);
 
-    // Processa os dados para criar os pontos do gráfico
-    const dadosGrafico = dadosFiltrados.map((item, index) => ({
-      x: xConverter(item[eixoX]),
-      y: yConverter(item[eixoY]),
-      r: raioConverter(item[raio]),
-      backgroundColor: cores[index % cores.length], // Cicla pelas cores fornecidas
-    }));
+    // prepara conversor para o campo de cor
+    const corConv = converterParaNumeros(dadosFiltrados, corField);
+
+    // paleta padrão (quantas cores precisar)
+    const palette = [
+      '#3366CC',
+      '#DC3912',
+      '#FF9900',
+      '#109618',
+      '#990099',
+      '#0099C6',
+      '#DD4477',
+      '#66AA00',
+      '#B82E2E',
+      '#316395',
+    ];
+
+    // monta dados para o Chart.js
+    const pontos = dadosFiltrados.map((item) => {
+      const cx = xConv(item[eixoX]);
+      const cy = yConv(item[eixoY]);
+      const cr = rConv(item[raio]);
+      const idx = corConv(item[corField]) - 1;
+      const color = palette[idx % palette.length];
+      return { x: cx, y: cy, r: cr, backgroundColor: color, _raw: item };
+    });
 
     if (grafico) {
-      // Atualiza o gráfico existente
-      grafico.data.datasets[0].data = dadosGrafico;
+      grafico.data.datasets[0].data = pontos;
       grafico.update();
     } else {
-      // Configuração inicial do gráfico de bolhas
-      const config = {
+      grafico = new Chart(ctx, {
         type: 'bubble',
         data: {
           datasets: [
             {
-              label: `Gráfico de Bolhas (${eixoX}, ${eixoY}, ${raio})`,
-              data: dadosGrafico,
-              backgroundColor: dadosGrafico.map((d) => d.backgroundColor),
+              label: `Bolhas (${eixoX} × ${eixoY} × ${raio}, cor por ${corField})`,
+              data: pontos,
+              // cada ponto já traz sua cor em backgroundColor
             },
           ],
         },
@@ -1424,36 +1436,38 @@ export function criarGraficoBolha(
           responsive: true,
           scales: {
             x: {
-              title: {
-                display: true,
-                text: eixoX,
-              },
+              title: { display: true, text: eixoX },
               beginAtZero: true,
             },
             y: {
-              title: {
-                display: true,
-                text: eixoY,
-              },
+              title: { display: true, text: eixoY },
               beginAtZero: true,
             },
           },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const { x, y, r, _raw } = ctx.raw;
+                  return [
+                    `${eixoX}: ${x}`,
+                    `${eixoY}: ${y}`,
+                    `${raio}: ${r}`,
+                    `${corField}: ${_raw[corField]}`,
+                  ];
+                },
+              },
+            },
+          },
         },
-      };
-
-      // Cria o gráfico
-      grafico = new Chart(ctx, config);
+      });
+      // registra para reagir a filtros globais
+      todosOsGraficos.push({ grafico, renderizar: renderizarBolhas });
     }
   }
 
-  // Renderiza pela primeira vez
+  // desenha pela primeira vez
   renderizarBolhas();
-
-  // Registra o gráfico para reagir a atualizações globais
-  todosOsGraficos.push({
-    grafico,
-    renderizar: renderizarBolhas, // Define o método de renderização para atualizações
-  });
 }
 
 /**
