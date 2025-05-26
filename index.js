@@ -1337,13 +1337,17 @@ async function gerarRelatorio(dadosOriginais) {
 }
 
 /**
- * Gráfico de bolhas com agregações 'raw' | 'count' | 'sum' | 'mean'
+ * Gráfico de bolhas com agregações
+ *  'raw'  | 'count' | 'sum' | 'mean'
+ *
+ * Agora o raio é **normalizado** para um intervalo visual
+ * confortável (5 px → 40 px) – nada de bolhas gigantes.
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {Array<Object>}            dadosOriginais
  * @param {string}                   eixoX
  * @param {string}                   eixoY
- * @param {string}                   raio         – campo usado em 'raw'
+ * @param {string}                   raio         – campo-fonte quando aggregationType='raw'
  * @param {string}                   corField
  * @param {string}   [aggregationType='raw']      – 'raw' | 'count' | 'sum' | 'mean'
  * @param {string}   [valueField=null]            – campo numérico p/ sum/mean
@@ -1363,18 +1367,18 @@ export function criarGraficoBolha(
     : dadosOriginais.slice();
   let grafico;
 
-  // ——— helpers ————————————————————————————————————————————
-  function convBuilder(dados, campo) {
+  // ————————————————— helpers ——————————————————
+  const convBuilder = (dados, campo) => {
     const map = {};
     let i = 1;
     dados.forEach((d) => (map[d[campo]] ??= i++));
     return (v) => (isNaN(+v) ? map[v] || 0 : +v);
-  }
+  };
 
   function renderizar() {
     const filtrados = getDadosAtuais(dadosCopy);
 
-    // Converters de string→número nos eixos
+    // Conversores string→número, se necessário
     const xConv = filtrados.some((d) => isNaN(+d[eixoX]))
       ? convBuilder(filtrados, eixoX)
       : (v) => +v || 0;
@@ -1382,8 +1386,8 @@ export function criarGraficoBolha(
       ? convBuilder(filtrados, eixoY)
       : (v) => +v || 0;
 
-    // ——— AGRUPAMENTO ————————————————————————————————
-    const grupos = new Map(); // key => { x,y,count,sum,cor }
+    // ————————— AGRUPAMENTO ————————————————
+    const grupos = new Map(); // key → {x,y,count,sum,cor}
     filtrados.forEach((d) => {
       const key = `${d[eixoX]}||${d[eixoY]}||${d[corField]}`;
       if (!grupos.has(key)) {
@@ -1397,10 +1401,13 @@ export function criarGraficoBolha(
       }
       const g = grupos.get(key);
       g.count += 1;
-      g.sum += parseFloat(valueField ? d[valueField] : d[raio]) || 0; // em raw é o raio original
+      g.sum += parseFloat(valueField ? d[valueField] : d[raio]) || 0;
     });
 
+    // ————————— NORMALIZAÇÃO DO RAIO —————————
     const pontos = [];
+    const rBrutos = [];
+
     grupos.forEach((g) => {
       let r;
       switch (aggregationType) {
@@ -1413,22 +1420,35 @@ export function criarGraficoBolha(
         case 'mean':
           r = g.sum / g.count;
           break;
-        default: // 'raw'
-          r = g.sum; // já é o valor de item[raio]
+        default:
+          r = g.sum; // 'raw'
       }
-      pontos.push({ x: g.x, y: g.y, r: Math.max(r, 1), _cor: g.cor });
+      rBrutos.push(r);
+      pontos.push({ x: g.x, y: g.y, r: 0, _cor: g.cor, _valor: r });
     });
 
-    // ——— CORES ————————————————————————————————
-    const cats = [...new Set(pontos.map((p) => p._cor))];
+    const minVal = Math.min(...rBrutos);
+    const maxVal = Math.max(...rBrutos);
+    const minPx = 5; // raio mínimo
+    const maxPx = 40; // raio máximo
+    const useSqrt = true;
+
+    rBrutos.forEach((v, i) => {
+      let t = (v - minVal) / (maxVal - minVal || 1); // 0-1
+      if (useSqrt) t = Math.sqrt(t); // √-compressão
+      pontos[i].r = minPx + t * (maxPx - minPx);
+    });
+
+    // ————————— CORES ————————————————
+    const categorias = [...new Set(pontos.map((p) => p._cor))];
     const colorMap = {};
-    cats.forEach((c, i) => {
-      const h = Math.round((i / cats.length) * 360);
+    categorias.forEach((c, i) => {
+      const h = Math.round((i / categorias.length) * 360);
       colorMap[c] = `hsl(${h},65%,50%)`;
     });
     const colors = pontos.map((p) => colorMap[p._cor]);
 
-    // ——— CHART.JS ————————————————————————————————
+    // ————————— CHART.JS ——————————————
     if (grafico) {
       grafico.data.datasets[0].data = pontos;
       grafico.data.datasets[0].backgroundColor = colors;
@@ -1443,12 +1463,14 @@ export function criarGraficoBolha(
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: ({ raw }) => [
-                  `${eixoX}: ${raw.x}`,
-                  `${eixoY}: ${raw.y}`,
-                  `raio: ${raw.r}`,
-                  `${corField}: ${raw._cor}`,
-                ],
+                label({ raw }) {
+                  return [
+                    `${eixoX}: ${raw.x}`,
+                    `${eixoY}: ${raw.y}`,
+                    `valor: ${raw._valor}`, // valor antes da escala
+                    `${corField}: ${raw._cor}`,
+                  ];
+                },
               },
             },
           },
