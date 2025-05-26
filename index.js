@@ -1363,7 +1363,7 @@ export function criarGraficoBolha(
     : dadosOriginais.slice();
   let grafico;
 
-  // Converte valores categóricos em índices numéricos para eixos discreto
+  // Converte valores categóricos em índices numéricos
   function converterParaNumeros(dados, campo) {
     const mapa = {};
     let contador = 1;
@@ -1379,7 +1379,7 @@ export function criarGraficoBolha(
   function renderizarBolhas() {
     const dadosFiltrados = getDadosAtuais(dadosCopy);
 
-    // detecta se precisa converter string → número
+    // Detecta e converte strings para números se necessário
     const isXString = dadosFiltrados.some((item) => isNaN(+item[eixoX]));
     const isYString = dadosFiltrados.some((item) => isNaN(+item[eixoY]));
     const xConv = isXString
@@ -1388,22 +1388,22 @@ export function criarGraficoBolha(
     const yConv = isYString
       ? converterParaNumeros(dadosFiltrados, eixoY)
       : (v) => parseFloat(v) || 0;
-    const rConv = (v) => Math.max(parseFloat(v) || 0, 1);
+    const rConv = (v) => Math.max(parseFloat(v) || 1, 1);
 
-    // monta lista única de categorias para corField
+    // 1) Extrai categorias únicas de corField
     const categorias = Array.from(
       new Set(dadosFiltrados.map((item) => item[corField])),
     );
 
-    // gera uma cor HSL distinta para cada categoria
+    // 2) Gera dinamicamente um mapa de cores HSL para cada categoria
     const colorMap = {};
-    const n = categorias.length;
+    const total = categorias.length;
     categorias.forEach((cat, i) => {
-      const hue = Math.round((i * 360) / n);
+      const hue = Math.round((i * 360) / total);
       colorMap[cat] = `hsl(${hue}, 65%, 50%)`;
     });
 
-    // cria pontos do gráfico
+    // 3) Monta os pontos do gráfico
     const pontos = dadosFiltrados.map((item) => ({
       x: xConv(item[eixoX]),
       y: yConv(item[eixoY]),
@@ -1413,44 +1413,26 @@ export function criarGraficoBolha(
     }));
 
     if (grafico) {
+      // Atualiza apenas os dados se o gráfico já existir
       grafico.data.datasets[0].data = pontos;
       grafico.update();
     } else {
+      // Criação inicial do gráfico
       grafico = new Chart(ctx, {
         type: 'bubble',
         data: {
           datasets: [
             {
-              label: `Bolhas (${eixoX} × ${eixoY} × ${raio}, cor por ${corField})`,
               data: pontos,
+              // cada ponto já possui sua cor em backgroundColor
             },
           ],
         },
         options: {
           responsive: true,
-          scales: {
-            x: {
-              title: { display: true, text: eixoX },
-              beginAtZero: true,
-            },
-            y: {
-              title: { display: true, text: eixoY },
-              beginAtZero: true,
-            },
-          },
           plugins: {
             legend: {
-              display: true,
-              labels: {
-                generateLabels: (chart) => {
-                  // cria uma legenda mostrando cada categoria com sua cor
-                  return categorias.map((cat) => ({
-                    text: cat,
-                    fillStyle: colorMap[cat],
-                    hidden: false,
-                  }));
-                },
-              },
+              display: false, // sem legenda
             },
             tooltip: {
               callbacks: {
@@ -1466,15 +1448,25 @@ export function criarGraficoBolha(
               },
             },
           },
+          scales: {
+            x: {
+              title: { display: true, text: eixoX },
+              beginAtZero: true,
+            },
+            y: {
+              title: { display: true, text: eixoY },
+              beginAtZero: true,
+            },
+          },
         },
       });
 
-      // registra para reagir a filtros globais
+      // Registra para reagir a filtros globais
       todosOsGraficos.push({ grafico, renderizar: renderizarBolhas });
     }
   }
 
-  // desenha pela primeira vez
+  // Renderização inicial
   renderizarBolhas();
 }
 
