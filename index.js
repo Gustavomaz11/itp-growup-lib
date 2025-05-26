@@ -1338,10 +1338,10 @@ async function gerarRelatorio(dadosOriginais) {
 
 /**
  * Cria um gráfico de bolhas que reage aos filtros aplicados, usando 4 campos:
- *  - eixoX: nome do campo para o eixo X
- *  - eixoY: nome do campo para o eixo Y
- *  - raio:  nome do campo que define o tamanho da bolha
- *  - corField: nome do campo categórico que define a cor da bolha
+ *  - eixoX:   nome do campo para o eixo X
+ *  - eixoY:   nome do campo para o eixo Y
+ *  - raio:    campo numérico que define o tamanho da bolha
+ *  - corField:campo categórico que define a cor da bolha
  *
  * @param {CanvasRenderingContext2D} ctx           Contexto do canvas onde o gráfico será renderizado.
  * @param {Array<Object>}          dadosOriginais Array de objetos com todos os registros.
@@ -1363,7 +1363,7 @@ export function criarGraficoBolha(
     : dadosOriginais.slice();
   let grafico;
 
-  // Converte valores categóricos em índices numéricos
+  // Converte valores categóricos em índices numéricos (1,2,3...)
   function converterParaNumeros(dados, campo) {
     const mapa = {};
     let contador = 1;
@@ -1379,7 +1379,7 @@ export function criarGraficoBolha(
   function renderizarBolhas() {
     const dadosFiltrados = getDadosAtuais(dadosCopy);
 
-    // Detecta e converte strings para números se necessário
+    // Detecta strings para converter se necessário
     const isXString = dadosFiltrados.some((item) => isNaN(+item[eixoX]));
     const isYString = dadosFiltrados.some((item) => isNaN(+item[eixoY]));
     const xConv = isXString
@@ -1390,50 +1390,46 @@ export function criarGraficoBolha(
       : (v) => parseFloat(v) || 0;
     const rConv = (v) => Math.max(parseFloat(v) || 1, 1);
 
-    // 1) Extrai categorias únicas de corField
+    // 1) Extrai categorias únicas para corField
     const categorias = Array.from(
       new Set(dadosFiltrados.map((item) => item[corField])),
     );
 
-    // 2) Gera dinamicamente um mapa de cores HSL para cada categoria
+    // 2) Gera mapa de cores HSL para cada categoria
     const colorMap = {};
-    const total = categorias.length;
     categorias.forEach((cat, i) => {
-      const hue = Math.round((i * 360) / total);
+      const hue = Math.round((i / categorias.length) * 360);
       colorMap[cat] = `hsl(${hue}, 65%, 50%)`;
     });
 
-    // 3) Monta os pontos do gráfico
+    // 3) Monta pontos e array de cores
     const pontos = dadosFiltrados.map((item) => ({
       x: xConv(item[eixoX]),
       y: yConv(item[eixoY]),
       r: rConv(item[raio]),
-      backgroundColor: colorMap[item[corField]],
       _raw: item,
     }));
+    const colors = dadosFiltrados.map((item) => colorMap[item[corField]]);
 
     if (grafico) {
-      // Atualiza apenas os dados se o gráfico já existir
       grafico.data.datasets[0].data = pontos;
+      grafico.data.datasets[0].backgroundColor = colors;
       grafico.update();
     } else {
-      // Criação inicial do gráfico
       grafico = new Chart(ctx, {
         type: 'bubble',
         data: {
           datasets: [
             {
               data: pontos,
-              // cada ponto já possui sua cor em backgroundColor
+              backgroundColor: colors,
             },
           ],
         },
         options: {
           responsive: true,
           plugins: {
-            legend: {
-              display: false, // sem legenda
-            },
+            legend: { display: false },
             tooltip: {
               callbacks: {
                 label: (ctx) => {
@@ -1461,12 +1457,12 @@ export function criarGraficoBolha(
         },
       });
 
-      // Registra para reagir a filtros globais
+      // registra para reagir a filtros globais
       todosOsGraficos.push({ grafico, renderizar: renderizarBolhas });
     }
   }
 
-  // Renderização inicial
+  // renderização inicial
   renderizarBolhas();
 }
 
