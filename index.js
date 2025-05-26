@@ -1337,21 +1337,16 @@ async function gerarRelatorio(dadosOriginais) {
 }
 
 /**
- * Cria/atualiza um gráfico de bolhas que reage aos filtros globais
- * e permite agregar os dados pelo par (eixoX,eixoY) usando
- *  - 'raw'   → 1 ponto por registro  (com raio = campo `raio`)
- *  - 'count' → 1 ponto por grupo     (raio = nº de registros)
- *  - 'sum'   → 1 ponto por grupo     (raio = soma de `valueField`)
- *  - 'mean'  → 1 ponto por grupo     (raio = média de `valueField`)
+ * Gráfico de bolhas com agregações 'raw' | 'count' | 'sum' | 'mean'
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {Array<Object>}            dadosOriginais
  * @param {string}                   eixoX
  * @param {string}                   eixoY
- * @param {string}                   raio           – campo-fonte do raio quando aggregationType='raw'
+ * @param {string}                   raio         – campo usado em 'raw'
  * @param {string}                   corField
- * @param {string}   [aggregationType='raw']        – 'raw' | 'count' | 'sum' | 'mean'
- * @param {string}   [valueField=null]              – campo numérico usado em 'sum' / 'mean'
+ * @param {string}   [aggregationType='raw']      – 'raw' | 'count' | 'sum' | 'mean'
+ * @param {string}   [valueField=null]            – campo numérico p/ sum/mean
  */
 export function criarGraficoBolha(
   ctx,
@@ -1366,49 +1361,47 @@ export function criarGraficoBolha(
   const dadosCopy = Array.isArray(dadosOriginais)
     ? [...dadosOriginais]
     : dadosOriginais.slice();
-  let grafico; // instância Chart.js
+  let grafico;
 
-  // Conversores para lidar com campos categóricos nos eixos
+  // ——— helpers ————————————————————————————————————————————
   function convBuilder(dados, campo) {
     const map = {};
     let i = 1;
-    dados.forEach((it) => {
-      const v = it[campo];
-      if (v != null && map[v] === undefined) map[v] = i++;
-    });
+    dados.forEach((d) => (map[d[campo]] ??= i++));
     return (v) => (isNaN(+v) ? map[v] || 0 : +v);
   }
 
   function renderizar() {
     const filtrados = getDadosAtuais(dadosCopy);
 
-    // Detecta se eixos são strings
-    const isXstr = filtrados.some((it) => isNaN(+it[eixoX]));
-    const isYstr = filtrados.some((it) => isNaN(+it[eixoY]));
-    const xConv = isXstr ? convBuilder(filtrados, eixoX) : (v) => +v || 0;
-    const yConv = isYstr ? convBuilder(filtrados, eixoY) : (v) => +v || 0;
+    // Converters de string→número nos eixos
+    const xConv = filtrados.some((d) => isNaN(+d[eixoX]))
+      ? convBuilder(filtrados, eixoX)
+      : (v) => +v || 0;
+    const yConv = filtrados.some((d) => isNaN(+d[eixoY]))
+      ? convBuilder(filtrados, eixoY)
+      : (v) => +v || 0;
 
-    // ————————————————————————— AGRUPAMENTO (quando ≠ 'raw') —————————————————————
-    const pontos = [];
-    const groupMap = new Map(); // key => { x, y, count, sum }
-
-    filtrados.forEach((it) => {
-      const key = `${it[eixoX]}||${it[eixoY]}||${it[corField]}`;
-      if (!groupMap.has(key)) {
-        groupMap.set(key, {
-          x: xConv(it[eixoX]),
-          y: yConv(it[eixoY]),
+    // ——— AGRUPAMENTO ————————————————————————————————
+    const grupos = new Map(); // key => { x,y,count,sum,cor }
+    filtrados.forEach((d) => {
+      const key = `${d[eixoX]}||${d[eixoY]}||${d[corField]}`;
+      if (!grupos.has(key)) {
+        grupos.set(key, {
+          x: xConv(d[eixoX]),
+          y: yConv(d[eixoY]),
           count: 0,
           sum: 0,
-          cor: it[corField],
+          cor: d[corField],
         });
       }
-      const g = groupMap.get(key);
+      const g = grupos.get(key);
       g.count += 1;
-      g.sum += parseFloat(valueField ? it[valueField] : it[raio]) || 0;
+      g.sum += parseFloat(valueField ? d[valueField] : d[raio]) || 0; // em raw é o raio original
     });
 
-    groupMap.forEach((g) => {
+    const pontos = [];
+    grupos.forEach((g) => {
       let r;
       switch (aggregationType) {
         case 'count':
@@ -1420,23 +1413,22 @@ export function criarGraficoBolha(
         case 'mean':
           r = g.sum / g.count;
           break;
-        default: // 'raw' → já temos 1 ponto por registro, mas aqui é agrupado
-          r = g.sum; // raio original do campo `raio`
+        default: // 'raw'
+          r = g.sum; // já é o valor de item[raio]
       }
-      // Garante tamanho mínimo para visualização
       pontos.push({ x: g.x, y: g.y, r: Math.max(r, 1), _cor: g.cor });
     });
 
-    // ————————— COLOR MAP —————————
-    const categorias = Array.from(new Set(pontos.map((p) => p._cor)));
+    // ——— CORES ————————————————————————————————
+    const cats = [...new Set(pontos.map((p) => p._cor))];
     const colorMap = {};
-    categorias.forEach((c, i) => {
-      const hue = Math.round((i / categorias.length) * 360);
-      colorMap[c] = `hsl(${hue},65%,50%)`;
+    cats.forEach((c, i) => {
+      const h = Math.round((i / cats.length) * 360);
+      colorMap[c] = `hsl(${h},65%,50%)`;
     });
     const colors = pontos.map((p) => colorMap[p._cor]);
 
-    // ————————— CHART.JS —————————
+    // ——— CHART.JS ————————————————————————————————
     if (grafico) {
       grafico.data.datasets[0].data = pontos;
       grafico.data.datasets[0].backgroundColor = colors;
@@ -1444,14 +1436,7 @@ export function criarGraficoBolha(
     } else {
       grafico = new Chart(ctx, {
         type: 'bubble',
-        data: {
-          datasets: [
-            {
-              data: pontos,
-              backgroundColor: colors,
-            },
-          ],
-        },
+        data: { datasets: [{ data: pontos, backgroundColor: colors }] },
         options: {
           responsive: true,
           plugins: {
@@ -1473,8 +1458,6 @@ export function criarGraficoBolha(
           },
         },
       });
-
-      // registra para reagir a filtros globais
       todosOsGraficos.push({ grafico, renderizar });
     }
   }
