@@ -145,6 +145,32 @@ function calcularTotal(dadosOriginais, callback) {
   return total;
 }
 
+function processarDadosAgregado(dados, campoGroup, campoValor, tipo) {
+  const countMap = new Map();
+  const sumMap = new Map();
+
+  dados.forEach((item) => {
+    const key = item[campoGroup];
+    if (key == null) return;
+    const val = parseFloat(item[campoValor]) || 0;
+    countMap.set(key, (countMap.get(key) || 0) + 1);
+    sumMap.set(key, (sumMap.get(key) || 0) + val);
+  });
+
+  // mantém ordem de aparição
+  const labels = Array.from(
+    new Set(dados.map((item) => item[campoGroup]).filter((v) => v != null)),
+  );
+
+  const valores = labels.map((label) => {
+    if (tipo === 'sum') return sumMap.get(label);
+    if (tipo === 'mean') return sumMap.get(label) / countMap.get(label);
+    return countMap.get(label);
+  });
+
+  return { labels, valores };
+}
+
 // --- processamento de dados com ordenação condicional ---
 
 function processarDados(dados, parametro_busca) {
@@ -246,6 +272,8 @@ export function criarGrafico(
   callback,
   porDuracao = true,
   parametro_busca_fim = null,
+  aggregationType = 'count', // 'count' | 'sum' | 'mean'
+  valueField = null, // campo numérico para sum/mean
 ) {
   // Cópia imutável dos dados originais
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
@@ -355,19 +383,35 @@ export function criarGrafico(
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
-    if (porDuracao === false) {
-      if (!parametro_busca_fim) {
+    if (aggregationType === 'count') {
+      // comportamento original de count
+      if (porDuracao === false) {
+        if (!parametro_busca_fim) {
+          throw new Error(
+            'parametro_busca_fim obrigatório quando porDuracao=false',
+          );
+        }
+        ({ labels, valores } = processarDuracaoAtendimentos(
+          dadosFiltrados,
+          parametro_busca,
+          parametro_busca_fim,
+        ));
+      } else {
+        ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
+      }
+    } else {
+      // sum ou mean
+      if (!valueField) {
         throw new Error(
-          'parametro_busca_fim obrigatório quando porDuracao=false',
+          'valueField obrigatório quando aggregationType for "sum" ou "mean"',
         );
       }
-      ({ labels, valores } = processarDuracaoAtendimentos(
+      ({ labels, valores } = processarDadosAgregado(
         dadosFiltrados,
         parametro_busca,
-        parametro_busca_fim,
+        valueField,
+        aggregationType,
       ));
-    } else {
-      ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
     }
 
     lastLabels = labels;
@@ -410,7 +454,6 @@ export function criarGrafico(
                 const ds = chart.data.datasets[0];
                 return chart.data.labels.map((lab, i) => ({
                   text: lab,
-                  // Proteção para o caso de backgroundColor não estar definido ou ter tamanho menor:
                   fillStyle: Array.isArray(ds.backgroundColor)
                     ? ds.backgroundColor[i] || 'rgba(0,0,0,0.1)'
                     : ds.backgroundColor || 'rgba(0,0,0,0.1)',
@@ -446,13 +489,14 @@ export function criarGrafico(
       parametro_busca,
       porDuracao,
       parametro_busca_fim,
-      callback, // Importante: armazenamos o callback
-      ultimoTotal: total, // Armazenamos o total inicial
+      callback,
+      aggregationType,
+      valueField,
+      ultimoTotal: total,
     });
 
     // Notifica callback
     if (callback) {
-      // Na primeira vez, não há variação para reportar
       callback({ total, variacaoTexto: null });
     }
   }
