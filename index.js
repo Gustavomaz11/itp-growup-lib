@@ -1337,18 +1337,21 @@ async function gerarRelatorio(dadosOriginais) {
 }
 
 /**
- * Cria um gráfico de bolhas que reage aos filtros aplicados, usando 4 campos:
- *  - eixoX:   nome do campo para o eixo X
- *  - eixoY:   nome do campo para o eixo Y
- *  - raio:    campo numérico que define o tamanho da bolha
- *  - corField:campo categórico que define a cor da bolha
+ * Cria/atualiza um gráfico de bolhas que reage aos filtros globais
+ * e permite agregar os dados pelo par (eixoX,eixoY) usando
+ *  - 'raw'   → 1 ponto por registro  (com raio = campo `raio`)
+ *  - 'count' → 1 ponto por grupo     (raio = nº de registros)
+ *  - 'sum'   → 1 ponto por grupo     (raio = soma de `valueField`)
+ *  - 'mean'  → 1 ponto por grupo     (raio = média de `valueField`)
  *
- * @param {CanvasRenderingContext2D} ctx           Contexto do canvas onde o gráfico será renderizado.
- * @param {Array<Object>}          dadosOriginais Array de objetos com todos os registros.
- * @param {string}                 eixoX          Campo do eixo X (numérico ou categórico).
- * @param {string}                 eixoY          Campo do eixo Y (numérico ou categórico).
- * @param {string}                 raio           Campo numérico para o tamanho da bolha.
- * @param {string}                 corField       Campo categórico para colorir as bolhas.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Array<Object>}            dadosOriginais
+ * @param {string}                   eixoX
+ * @param {string}                   eixoY
+ * @param {string}                   raio           – campo-fonte do raio quando aggregationType='raw'
+ * @param {string}                   corField
+ * @param {string}   [aggregationType='raw']        – 'raw' | 'count' | 'sum' | 'mean'
+ * @param {string}   [valueField=null]              – campo numérico usado em 'sum' / 'mean'
  */
 export function criarGraficoBolha(
   ctx,
@@ -1357,60 +1360,83 @@ export function criarGraficoBolha(
   eixoY,
   raio,
   corField,
+  aggregationType = 'raw',
+  valueField = null,
 ) {
   const dadosCopy = Array.isArray(dadosOriginais)
     ? [...dadosOriginais]
     : dadosOriginais.slice();
-  let grafico;
+  let grafico; // instância Chart.js
 
-  // Converte valores categóricos em índices numéricos (1,2,3...)
-  function converterParaNumeros(dados, campo) {
-    const mapa = {};
-    let contador = 1;
-    dados.forEach((item) => {
-      const val = item[campo];
-      if (val != null && mapa[val] === undefined) {
-        mapa[val] = contador++;
-      }
+  // Conversores para lidar com campos categóricos nos eixos
+  function convBuilder(dados, campo) {
+    const map = {};
+    let i = 1;
+    dados.forEach((it) => {
+      const v = it[campo];
+      if (v != null && map[v] === undefined) map[v] = i++;
     });
-    return (val) => mapa[val] || 0;
+    return (v) => (isNaN(+v) ? map[v] || 0 : +v);
   }
 
-  function renderizarBolhas() {
-    const dadosFiltrados = getDadosAtuais(dadosCopy);
+  function renderizar() {
+    const filtrados = getDadosAtuais(dadosCopy);
 
-    // Detecta strings para converter se necessário
-    const isXString = dadosFiltrados.some((item) => isNaN(+item[eixoX]));
-    const isYString = dadosFiltrados.some((item) => isNaN(+item[eixoY]));
-    const xConv = isXString
-      ? converterParaNumeros(dadosFiltrados, eixoX)
-      : (v) => parseFloat(v) || 0;
-    const yConv = isYString
-      ? converterParaNumeros(dadosFiltrados, eixoY)
-      : (v) => parseFloat(v) || 0;
-    const rConv = (v) => Math.max(parseFloat(v) || 1, 1);
+    // Detecta se eixos são strings
+    const isXstr = filtrados.some((it) => isNaN(+it[eixoX]));
+    const isYstr = filtrados.some((it) => isNaN(+it[eixoY]));
+    const xConv = isXstr ? convBuilder(filtrados, eixoX) : (v) => +v || 0;
+    const yConv = isYstr ? convBuilder(filtrados, eixoY) : (v) => +v || 0;
 
-    // 1) Extrai categorias únicas para corField
-    const categorias = Array.from(
-      new Set(dadosFiltrados.map((item) => item[corField])),
-    );
+    // ————————————————————————— AGRUPAMENTO (quando ≠ 'raw') —————————————————————
+    const pontos = [];
+    const groupMap = new Map(); // key => { x, y, count, sum }
 
-    // 2) Gera mapa de cores HSL para cada categoria
-    const colorMap = {};
-    categorias.forEach((cat, i) => {
-      const hue = Math.round((i / categorias.length) * 360);
-      colorMap[cat] = `hsl(${hue}, 65%, 50%)`;
+    filtrados.forEach((it) => {
+      const key = `${it[eixoX]}||${it[eixoY]}||${it[corField]}`;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          x: xConv(it[eixoX]),
+          y: yConv(it[eixoY]),
+          count: 0,
+          sum: 0,
+          cor: it[corField],
+        });
+      }
+      const g = groupMap.get(key);
+      g.count += 1;
+      g.sum += parseFloat(valueField ? it[valueField] : it[raio]) || 0;
     });
 
-    // 3) Monta pontos e array de cores
-    const pontos = dadosFiltrados.map((item) => ({
-      x: xConv(item[eixoX]),
-      y: yConv(item[eixoY]),
-      r: rConv(item[raio]),
-      _raw: item,
-    }));
-    const colors = dadosFiltrados.map((item) => colorMap[item[corField]]);
+    groupMap.forEach((g) => {
+      let r;
+      switch (aggregationType) {
+        case 'count':
+          r = g.count;
+          break;
+        case 'sum':
+          r = g.sum;
+          break;
+        case 'mean':
+          r = g.sum / g.count;
+          break;
+        default: // 'raw' → já temos 1 ponto por registro, mas aqui é agrupado
+          r = g.sum; // raio original do campo `raio`
+      }
+      // Garante tamanho mínimo para visualização
+      pontos.push({ x: g.x, y: g.y, r: Math.max(r, 1), _cor: g.cor });
+    });
 
+    // ————————— COLOR MAP —————————
+    const categorias = Array.from(new Set(pontos.map((p) => p._cor)));
+    const colorMap = {};
+    categorias.forEach((c, i) => {
+      const hue = Math.round((i / categorias.length) * 360);
+      colorMap[c] = `hsl(${hue},65%,50%)`;
+    });
+    const colors = pontos.map((p) => colorMap[p._cor]);
+
+    // ————————— CHART.JS —————————
     if (grafico) {
       grafico.data.datasets[0].data = pontos;
       grafico.data.datasets[0].backgroundColor = colors;
@@ -1432,38 +1458,28 @@ export function criarGraficoBolha(
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: (ctx) => {
-                  const { x, y, r, _raw } = ctx.raw;
-                  return [
-                    `${eixoX}: ${x}`,
-                    `${eixoY}: ${y}`,
-                    `${raio}: ${r}`,
-                    `${corField}: ${_raw[corField]}`,
-                  ];
-                },
+                label: ({ raw }) => [
+                  `${eixoX}: ${raw.x}`,
+                  `${eixoY}: ${raw.y}`,
+                  `raio: ${raw.r}`,
+                  `${corField}: ${raw._cor}`,
+                ],
               },
             },
           },
           scales: {
-            x: {
-              title: { display: true, text: eixoX },
-              beginAtZero: true,
-            },
-            y: {
-              title: { display: true, text: eixoY },
-              beginAtZero: true,
-            },
+            x: { title: { display: true, text: eixoX }, beginAtZero: true },
+            y: { title: { display: true, text: eixoY }, beginAtZero: true },
           },
         },
       });
 
       // registra para reagir a filtros globais
-      todosOsGraficos.push({ grafico, renderizar: renderizarBolhas });
+      todosOsGraficos.push({ grafico, renderizar });
     }
   }
 
-  // renderização inicial
-  renderizarBolhas();
+  renderizar();
 }
 
 /**
