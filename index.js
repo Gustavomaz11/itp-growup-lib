@@ -1623,6 +1623,20 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
   });
 }
 
+/**
+ * Gera automaticamente uma paleta de cores HSL
+ * com quantidade igual ao número de labels.
+ * @param {string[]} labels
+ * @returns {string[]} array de hsl strings
+ */
+function gerarCores(labels) {
+  const count = labels.length;
+  return labels.map((_, i) => {
+    const hue = Math.round((i * 360) / count);
+    return `hsl(${hue}, 65%, 55%)`;
+  });
+}
+
 export function criarIcone() {
   // Ícone flutuante
   const widgetIcon = document.createElement('button');
@@ -1647,9 +1661,9 @@ export function criarIcone() {
   document.body.appendChild(widgetIcon);
 
   // Draggable
-  let isDragging = false;
-  let offsetX = 0;
-  let offsetY = 0;
+  let isDragging = false,
+    offsetX = 0,
+    offsetY = 0;
   widgetIcon.addEventListener('mousedown', (e) => {
     isDragging = true;
     const rect = widgetIcon.getBoundingClientRect();
@@ -1715,7 +1729,6 @@ export function criarIcone() {
   document.body.appendChild(widgetWindow);
 
   widgetIcon.addEventListener('click', () => {
-    // Toggle janela
     widgetWindow.style.display =
       widgetWindow.style.display === 'none' ? 'block' : 'none';
     const rect = widgetIcon.getBoundingClientRect();
@@ -1749,7 +1762,6 @@ export function criarIcone() {
         </select>
         <button id="widgetCreateChartBtn" style="width:100%;">Criar Gráfico</button>
       </div>
-      <div id="widgetChartContainer"></div>
     `;
     document.getElementById('widgetFetchBtn').onclick = handleFetch;
     document.getElementById('widgetJsonFile').onchange = handleFile;
@@ -1766,18 +1778,16 @@ export function criarIcone() {
 
   function handleFile(e) {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const data = JSON.parse(reader.result);
-          processData(data);
-        } catch (e) {
-          alert('JSON inválido');
-        }
-      };
-      reader.readAsText(file);
-    }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        processData(JSON.parse(reader.result));
+      } catch {
+        alert('JSON inválido');
+      }
+    };
+    reader.readAsText(file);
   }
 
   function processData(data) {
@@ -1794,24 +1804,55 @@ export function criarIcone() {
     sel.innerHTML = props
       .map((p) => `<option value="${p}">${p}</option>`)
       .join('');
-    document.getElementById('widgetPropSelection').style.display = 'block';
+    const selDiv = document.getElementById('widgetPropSelection');
+    selDiv.style.display = 'block';
     document.getElementById('widgetCreateChartBtn').onclick = () =>
       createChartForProp(sel.value);
   }
 
   function createChartForProp(prop) {
-    const type = document.getElementById('widgetChartType').value;
-    const container = document.getElementById('widgetChartContainer');
-    container.innerHTML = '<canvas id="widgetChartCanvas"></canvas>';
-    const ctx = container.querySelector('canvas').getContext('2d');
-    criarGrafico(
-      ctx,
+    const type = document.getElementById('widgetChartType').value.toLowerCase();
+
+    // Agrupa dados por categoria
+    const agrupado = latestData.reduce((acc, item) => {
+      const key = item[prop] ?? '–';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const labels = Object.keys(agrupado);
+    const valores = Object.values(agrupado);
+
+    // Cria canvas e contexto
+    const canvas = document.createElement('canvas');
+    canvas.style.maxWidth = '600px';
+    canvas.style.display = 'block';
+    canvas.style.margin = '20px auto';
+    const ctx = canvas.getContext('2d');
+
+    // Gera cores automaticamente
+    const backgroundColors = gerarCores(labels);
+
+    // Renderiza com Chart.js
+    new Chart(ctx, {
       type,
-      prop,
-      ['rgba(0,123,255,0.5)'],
-      prop,
-      latestData,
-      () => {},
-    );
+      data: {
+        labels,
+        datasets: [
+          {
+            data: valores,
+            backgroundColor: backgroundColors,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'bottom' },
+        },
+      },
+    });
+
+    // Insere o gráfico diretamente no <body>
+    document.body.appendChild(canvas);
   }
 }
