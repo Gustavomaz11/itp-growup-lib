@@ -1622,3 +1622,193 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
     renderizar,
   });
 }
+
+function initFloatingWidget() {
+  // Ícone flutuante
+  const widgetIcon = document.createElement('div');
+  widgetIcon.id = 'floatingWidgetIcon';
+  Object.assign(widgetIcon.style, {
+    position: 'fixed',
+    width: '50px',
+    height: '50px',
+    backgroundImage: 'url("./pie.svg")',
+    backgroundSize: 'contain',
+    backgroundRepeat: 'no-repeat',
+    cursor: 'pointer',
+    zIndex: '10000',
+    bottom: '20px',
+    right: '20px',
+  });
+  document.body.appendChild(widgetIcon);
+
+  // Draggable
+  let isDragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+  widgetIcon.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    const rect = widgetIcon.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    let x = e.clientX - offsetX;
+    let y = e.clientY - offsetY;
+    const maxX = window.innerWidth - widgetIcon.offsetWidth;
+    const maxY = window.innerHeight - widgetIcon.offsetHeight;
+    x = Math.max(0, Math.min(x, maxX));
+    y = Math.max(0, Math.min(y, maxY));
+    widgetIcon.style.left = x + 'px';
+    widgetIcon.style.top = y + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    // Snap to nearest edge
+    const rect = widgetIcon.getBoundingClientRect();
+    const distances = {
+      left: rect.left,
+      right: window.innerWidth - rect.right,
+      top: rect.top,
+      bottom: window.innerHeight - rect.bottom,
+    };
+    const edge = Object.keys(distances).reduce((a, b) =>
+      distances[a] < distances[b] ? a : b,
+    );
+    switch (edge) {
+      case 'left':
+        widgetIcon.style.left = '0px';
+        break;
+      case 'right':
+        widgetIcon.style.left =
+          window.innerWidth - widgetIcon.offsetWidth + 'px';
+        break;
+      case 'top':
+        widgetIcon.style.top = '0px';
+        break;
+      case 'bottom':
+        widgetIcon.style.top =
+          window.innerHeight - widgetIcon.offsetHeight + 'px';
+        break;
+    }
+  });
+
+  // Janela de configuração
+  const widgetWindow = document.createElement('div');
+  widgetWindow.id = 'floatingWidgetWindow';
+  Object.assign(widgetWindow.style, {
+    position: 'fixed',
+    width: '300px',
+    padding: '10px',
+    background: '#fff',
+    border: '1px solid #ccc',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+    zIndex: '10000',
+    display: 'none',
+  });
+  document.body.appendChild(widgetWindow);
+
+  widgetIcon.addEventListener('click', () => {
+    // Toggle janela
+    widgetWindow.style.display =
+      widgetWindow.style.display === 'none' ? 'block' : 'none';
+    const rect = widgetIcon.getBoundingClientRect();
+    widgetWindow.style.top = rect.bottom + 5 + 'px';
+    widgetWindow.style.left = rect.left + 'px';
+    renderWidgetWindowContent();
+  });
+
+  let latestData = null;
+
+  function renderWidgetWindowContent() {
+    widgetWindow.innerHTML = `
+      <div>
+        <label>Endpoint:</label>
+        <input type="text" id="widgetEndpoint" style="width:100%; margin-bottom:8px;"/>
+      </div>
+      <div>
+        <label>Arquivo JSON:</label>
+        <input type="file" id="widgetJsonFile" accept=".json" style="margin-bottom:8px;"/>
+      </div>
+      <button id="widgetFetchBtn" style="width:100%; margin-bottom:8px;">Requisição</button>
+      <div id="widgetResponseProps" style="max-height:150px; overflow:auto; margin-bottom:8px;"></div>
+      <div id="widgetPropSelection" style="display:none; margin-bottom:8px;">
+        <label>Propriedade:</label>
+        <select id="widgetPropSelect" style="width:100%; margin-bottom:8px;"></select>
+        <label>Tipo de Gráfico:</label>
+        <select id="widgetChartType" style="width:100%; margin-bottom:8px;">
+          <option value="bar">Bar</option>
+          <option value="line">Line</option>
+          <option value="pie">Pie</option>
+        </select>
+        <button id="widgetCreateChartBtn" style="width:100%;">Criar Gráfico</button>
+      </div>
+      <div id="widgetChartContainer"></div>
+    `;
+    document.getElementById('widgetFetchBtn').onclick = handleFetch;
+    document.getElementById('widgetJsonFile').onchange = handleFile;
+  }
+
+  function handleFetch() {
+    const endpoint = document.getElementById('widgetEndpoint').value;
+    if (!endpoint) return alert('Informe o endpoint');
+    fetch(endpoint)
+      .then((res) => res.json())
+      .then((data) => processData(data))
+      .catch((err) => alert('Erro: ' + err));
+  }
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          processData(data);
+        } catch (e) {
+          alert('JSON inválido');
+        }
+      };
+      reader.readAsText(file);
+    }
+  }
+
+  function processData(data) {
+    latestData = data;
+    const props = Array.isArray(data)
+      ? Object.keys(data[0] || {})
+      : Object.keys(data);
+    const respDiv = document.getElementById('widgetResponseProps');
+    respDiv.innerHTML =
+      '<strong>Propriedades:</strong><ul>' +
+      props.map((p) => `<li>${p}</li>`).join('') +
+      '</ul>';
+    const sel = document.getElementById('widgetPropSelect');
+    sel.innerHTML = props
+      .map((p) => `<option value="${p}">${p}</option>`)
+      .join('');
+    document.getElementById('widgetPropSelection').style.display = 'block';
+    document.getElementById('widgetCreateChartBtn').onclick = () =>
+      createChartForProp(sel.value);
+  }
+
+  function createChartForProp(prop) {
+    const type = document.getElementById('widgetChartType').value;
+    const container = document.getElementById('widgetChartContainer');
+    container.innerHTML = '<canvas id="widgetChartCanvas"></canvas>';
+    const ctx = container.querySelector('canvas').getContext('2d');
+    criarGrafico(
+      ctx,
+      type,
+      prop,
+      ['rgba(0,123,255,0.5)'],
+      prop,
+      latestData,
+      () => {},
+    );
+  }
+}
+
+initFloatingWidget();
