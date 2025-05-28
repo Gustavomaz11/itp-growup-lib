@@ -1631,7 +1631,7 @@ function initFloatingWidget() {
     position: 'fixed',
     width: '50px',
     height: '50px',
-    backgroundImage: 'url("./pie.svg")',
+    backgroundImage: 'url("pie.svg")',
     backgroundSize: 'contain',
     backgroundRepeat: 'no-repeat',
     cursor: 'pointer',
