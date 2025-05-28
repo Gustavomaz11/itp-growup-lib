@@ -1670,34 +1670,50 @@ export function criarIcone(chartContainer) {
   document.body.appendChild(widgetWindow);
   console.log('[criarIcone] janela de configuração criada');
 
-  // --- Drag & drop ---
+  // --- Drag & drop com limiar para distinguir clique de arraste ---
   let isDragging = false;
+  let justDragged = false;
+  let startX = 0,
+    startY = 0;
   let offsetX = 0,
     offsetY = 0;
-  let justDragged = false;
+  const DRAG_THRESHOLD = 5; // px de movimento mínimo
 
   function onMouseDown(e) {
     isDragging = true;
     justDragged = false;
-    // passa de bottom/right para top/left para controlar posição
+    startX = e.clientX;
+    startY = e.clientY;
+
+    // Passa de bottom/right para top/left para controlar posição
     widgetIcon.style.right = 'auto';
     widgetIcon.style.bottom = 'auto';
 
     const rect = widgetIcon.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    console.log('[criarIcone] drag iniciado em:', rect.left, rect.top);
+    offsetX = startX - rect.left;
+    offsetY = startY - rect.top;
+    console.log('[criarIcone] mousedown em:', rect.left, rect.top);
 
     document.addEventListener('mousemove', onMouseMove);
   }
 
   function onMouseMove(e) {
     if (!isDragging) return;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    // Só considera que começou o drag de fato ao ultrapassar o threshold
+    if (!justDragged && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      justDragged = true;
+      console.log('[criarIcone] threshold ultrapassado, iniciando arraste');
+    }
+    if (!justDragged) return;
+
     const width = widgetIcon.offsetWidth;
     const height = widgetIcon.offsetHeight;
     let x = e.clientX - offsetX;
     let y = e.clientY - offsetY;
-    // limita dentro da viewport
+    // Limita dentro da viewport
     x = Math.max(0, Math.min(window.innerWidth - width, x));
     y = Math.max(0, Math.min(window.innerHeight - height, y));
     widgetIcon.style.left = `${x}px`;
@@ -1707,43 +1723,46 @@ export function criarIcone(chartContainer) {
 
   function onMouseUp() {
     if (!isDragging) return;
-    isDragging = false;
     document.removeEventListener('mousemove', onMouseMove);
-    justDragged = true;
+    isDragging = false;
 
-    // snap ao canto mais próximo
-    const rect = widgetIcon.getBoundingClientRect();
-    const distances = {
-      esquerda: rect.left,
-      direita: window.innerWidth - rect.right,
-      topo: rect.top,
-      base: window.innerHeight - rect.bottom,
-    };
-    const nearest = Object.entries(distances).sort((a, b) => a[1] - b[1])[0][0];
-    switch (nearest) {
-      case 'esquerda':
-        widgetIcon.style.left = '20px';
-        break;
-      case 'direita':
-        widgetIcon.style.left = `${
-          window.innerWidth - widgetIcon.offsetWidth - 20
-        }px`;
-        break;
-      case 'topo':
-        widgetIcon.style.top = '20px';
-        break;
-      case 'base':
-        widgetIcon.style.top = `${
-          window.innerHeight - widgetIcon.offsetHeight - 20
-        }px`;
-        break;
+    if (justDragged) {
+      // Snap ao canto mais próximo
+      const rect = widgetIcon.getBoundingClientRect();
+      const distances = {
+        esquerda: rect.left,
+        direita: window.innerWidth - rect.right,
+        topo: rect.top,
+        base: window.innerHeight - rect.bottom,
+      };
+      const nearest = Object.entries(distances).sort(
+        (a, b) => a[1] - b[1],
+      )[0][0];
+      switch (nearest) {
+        case 'esquerda':
+          widgetIcon.style.left = '20px';
+          break;
+        case 'direita':
+          widgetIcon.style.left = `${
+            window.innerWidth - widgetIcon.offsetWidth - 20
+          }px`;
+          break;
+        case 'topo':
+          widgetIcon.style.top = '20px';
+          break;
+        case 'base':
+          widgetIcon.style.top = `${
+            window.innerHeight - widgetIcon.offsetHeight - 20
+          }px`;
+          break;
+      }
+      console.log('[criarIcone] drag finalizado. Snap para:', nearest);
+
+      // Curto delay para não bloquear o clique logo após o drag
+      setTimeout(() => {
+        justDragged = false;
+      }, 100);
     }
-    console.log('[criarIcone] drag finalizado. Snap para:', nearest);
-
-    // curto delay para evitar que o click subsequente seja interpretado como abertura
-    setTimeout(() => {
-      justDragged = false;
-    }, 100);
   }
 
   widgetIcon.addEventListener('mousedown', onMouseDown);
@@ -1754,7 +1773,7 @@ export function criarIcone(chartContainer) {
 
   widgetIcon.addEventListener('click', () => {
     if (justDragged) {
-      console.log('[criarIcone] clique ignorado (foi drag)');
+      console.log('[criarIcone] clique ignorado (foi arraste)');
       return;
     }
     widgetWindow.style.display =
@@ -1792,40 +1811,23 @@ export function criarIcone(chartContainer) {
     const endpoint = document.getElementById('widgetEndpoint').value;
     console.log('[criarIcone] endpoint informado:', endpoint);
     if (!endpoint) {
-      console.error('[criarIcone] nenhum endpoint informado');
       alert('Informe o endpoint');
       return;
     }
     fetch(endpoint)
-      .then((res) => {
-        console.log('[criarIcone] status da resposta:', res.status);
-        return res.json();
-      })
-      .then((data) => {
-        console.log('[criarIcone] dados recebidos via fetch');
-        processData(data);
-      })
-      .catch((err) => {
-        console.error('[criarIcone] erro ao buscar dados:', err);
-        alert('Erro na requisição: ' + err);
-      });
+      .then((res) => res.json())
+      .then((data) => processData(data))
+      .catch((err) => alert('Erro na requisição: ' + err));
   }
 
   function handleFile(e) {
     const file = e.target.files[0];
-    console.log('[criarIcone] arquivo selecionado:', file);
-    if (!file) {
-      console.error('[criarIcone] nenhum arquivo selecionado');
-      return;
-    }
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const json = JSON.parse(reader.result);
-        console.log('[criarIcone] JSON parseado:', json);
-        processData(json);
-      } catch (err) {
-        console.error('[criarIcone] JSON inválido:', err);
+        processData(JSON.parse(reader.result));
+      } catch {
         alert('JSON inválido');
       }
     };
@@ -1835,7 +1837,6 @@ export function criarIcone(chartContainer) {
   function processData(data) {
     console.log('[criarIcone] processando dados:', data);
     if (!Array.isArray(data)) {
-      console.error('[criarIcone] dados não são um array');
       alert('O JSON deve ser um array de objetos');
       return;
     }
@@ -1856,11 +1857,9 @@ export function criarIcone(chartContainer) {
   function createChartForProp(prop) {
     console.log('[criarIcone] criando gráfico para propriedade:', prop);
     if (!latestData) {
-      console.error('[criarIcone] nenhum dado carregado');
       alert('Carregue os dados antes de criar o gráfico');
       return;
     }
-
     const agrupado = latestData.reduce((acc, item) => {
       const key = item[prop] ?? '–';
       acc[key] = (acc[key] || 0) + 1;
@@ -1868,46 +1867,35 @@ export function criarIcone(chartContainer) {
     }, {});
     const labels = Object.keys(agrupado);
     const valores = Object.values(agrupado);
-    console.log('[criarIcone] rótulos e valores:', labels, valores);
-
     const canvas = document.createElement('canvas');
     canvas.style.maxWidth = '600px';
     canvas.style.display = 'block';
     canvas.style.margin = '20px auto';
     const ctx = canvas.getContext('2d');
 
-    try {
-      new Chart(ctx, {
-        type: document.getElementById('widgetChartType').value.toLowerCase(),
-        data: {
-          labels,
-          datasets: [{ data: valores, backgroundColor: gerarCores(labels) }],
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { position: 'bottom' } },
-        },
-      });
-      if (!chartContainer || !(chartContainer instanceof HTMLElement)) {
-        console.error(
-          '[criarIcone] chartContainer inválido na criação do gráfico',
-        );
-        return;
-      }
+    new Chart(ctx, {
+      type: document.getElementById('widgetChartType').value.toLowerCase(),
+      data: {
+        labels,
+        datasets: [{ data: valores, backgroundColor: gerarCores(labels) }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
+
+    if (chartContainer instanceof HTMLElement) {
       chartContainer.appendChild(canvas);
       console.log('[criarIcone] gráfico anexado em chartContainer');
-    } catch (err) {
-      console.error('[criarIcone] erro ao criar gráfico:', err);
-      alert('Erro ao criar gráfico: ' + err.message);
     }
   }
 
   function gerarCores(labels) {
     const count = labels.length;
-    return labels.map((_, i) => {
-      const hue = Math.round((i * 360) / count);
-      return `hsl(${hue},65%,55%)`;
-    });
+    return labels.map(
+      (_, i) => `hsl(${Math.round((i * 360) / count)},65%,55%)`,
+    );
   }
 
   console.log('[criarIcone] inicialização concluída');
