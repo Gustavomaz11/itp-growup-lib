@@ -1637,8 +1637,14 @@ function gerarCores(labels) {
   });
 }
 
-export function criarIcone() {
-  console.log('[criarIcone] Initializing widget...');
+export function criarIcone(targetContainer) {
+  console.log('[criarIcone] iniciado com containerDestino:', targetContainer);
+  if (!targetContainer || !(targetContainer instanceof HTMLElement)) {
+    console.error(
+      '[criarIcone] container inválido! Passe um elemento DOM válido.',
+    );
+    return;
+  }
 
   // Ícone flutuante
   const widgetIcon = document.createElement('button');
@@ -1661,67 +1667,7 @@ export function criarIcone() {
     boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
   });
   document.body.appendChild(widgetIcon);
-  console.log('[criarIcone] Widget icon appended to body');
-
-  // Draggable
-  let isDragging = false,
-    offsetX = 0,
-    offsetY = 0;
-  widgetIcon.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    const rect = widgetIcon.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    console.log('[criarIcone] Drag start', { offsetX, offsetY });
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    let x = e.clientX - offsetX;
-    let y = e.clientY - offsetY;
-    const maxX = window.innerWidth - widgetIcon.offsetWidth;
-    const maxY = window.innerHeight - widgetIcon.offsetHeight;
-    x = Math.max(0, Math.min(x, maxX));
-    y = Math.max(0, Math.min(y, maxY));
-    widgetIcon.style.left = x + 'px';
-    widgetIcon.style.top = y + 'px';
-  });
-  document.addEventListener('mouseup', () => {
-    if (!isDragging) return;
-    isDragging = false;
-    console.log('[criarIcone] Drag end');
-    // Snap to nearest edge
-    try {
-      const rect = widgetIcon.getBoundingClientRect();
-      const distances = {
-        left: rect.left,
-        right: window.innerWidth - rect.right,
-        top: rect.top,
-        bottom: window.innerHeight - rect.bottom,
-      };
-      const edge = Object.keys(distances).reduce((a, b) =>
-        distances[a] < distances[b] ? a : b,
-      );
-      switch (edge) {
-        case 'left':
-          widgetIcon.style.left = '0px';
-          break;
-        case 'right':
-          widgetIcon.style.left =
-            window.innerWidth - widgetIcon.offsetWidth + 'px';
-          break;
-        case 'top':
-          widgetIcon.style.top = '0px';
-          break;
-        case 'bottom':
-          widgetIcon.style.top =
-            window.innerHeight - widgetIcon.offsetHeight + 'px';
-          break;
-      }
-      console.log('[criarIcone] Snapped to edge:', edge);
-    } catch (err) {
-      console.error('[criarIcone] Error snapping to edge:', err);
-    }
-  });
+  console.log('[criarIcone] ícone injetado no corpo do documento');
 
   // Janela de configuração
   const widgetWindow = document.createElement('div');
@@ -1737,7 +1683,9 @@ export function criarIcone() {
     display: 'none',
   });
   document.body.appendChild(widgetWindow);
-  console.log('[criarIcone] Widget window created');
+  console.log('[criarIcone] janela de configuração criada');
+
+  let latestData = null;
 
   widgetIcon.addEventListener('click', () => {
     widgetWindow.style.display =
@@ -1745,69 +1693,70 @@ export function criarIcone() {
     const rect = widgetIcon.getBoundingClientRect();
     widgetWindow.style.top = rect.bottom + 5 + 'px';
     widgetWindow.style.left = rect.left + 'px';
+    renderWidgetWindowContent();
     console.log(
-      '[criarIcone] Widget window toggled, now',
+      '[criarIcone] janela de configuração exibida:',
       widgetWindow.style.display,
     );
-    renderWidgetWindowContent();
   });
 
-  let latestData = null;
-
   function renderWidgetWindowContent() {
-    console.log('[renderWidgetWindowContent] Rendering window content');
     widgetWindow.innerHTML = `
-      <div>
-        <label>Endpoint:</label>
-        <input type="text" id="widgetEndpoint" style="width:100%; margin-bottom:8px;"/>
-      </div>
-      <div>
-        <label>Arquivo JSON:</label>
-        <input type="file" id="widgetJsonFile" accept=".json" style="margin-bottom:8px;"/>
-      </div>
+      <div><label>Endpoint:</label><input id="widgetEndpoint" style="width:100%; margin-bottom:8px;"/></div>
+      <div><label>Arquivo JSON:</label><input type="file" id="widgetJsonFile" accept=".json" style="margin-bottom:8px;"/></div>
       <button id="widgetFetchBtn" style="width:100%; margin-bottom:8px;">Requisição</button>
       <div id="widgetResponseProps" style="max-height:150px; overflow:auto; margin-bottom:8px;"></div>
       <div id="widgetPropSelection" style="display:none; margin-bottom:8px;">
-        <label>Propriedade:</label>
-        <select id="widgetPropSelect" style="width:100%; margin-bottom:8px;"></select>
-        <label>Tipo de Gráfico:</label>
-        <select id="widgetChartType" style="width:100%; margin-bottom:8px;">
-          <option value="bar">Bar</option>
-          <option value="line">Line</option>
-          <option value="pie">Pie</option>
+        <label>Propriedade:</label><select id="widgetPropSelect" style="width:100%; margin-bottom:8px;"></select>
+        <label>Tipo de Gráfico:</label><select id="widgetChartType" style="width:100%; margin-bottom:8px;">
+          <option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option>
         </select>
         <button id="widgetCreateChartBtn" style="width:100%;">Criar Gráfico</button>
       </div>
     `;
     document.getElementById('widgetFetchBtn').onclick = handleFetch;
     document.getElementById('widgetJsonFile').onchange = handleFile;
+    console.log('[criarIcone] conteúdo da janela renderizado');
   }
 
   function handleFetch() {
     const endpoint = document.getElementById('widgetEndpoint').value;
-    console.log('[handleFetch] Fetching endpoint', endpoint);
-    if (!endpoint) return console.error('[handleFetch] No endpoint provided');
+    console.log('[criarIcone] endpoint informado:', endpoint);
+    if (!endpoint) {
+      console.error('[criarIcone] nenhum endpoint informado');
+      alert('Informe o endpoint');
+      return;
+    }
     fetch(endpoint)
       .then((res) => {
-        console.log('[handleFetch] Response status', res.status);
+        console.log('[criarIcone] status da resposta:', res.status);
         return res.json();
       })
-      .then((data) => processData(data))
-      .catch((err) => console.error('[handleFetch] Fetch error', err));
+      .then((data) => {
+        console.log('[criarIcone] dados recebidos via fetch');
+        processData(data);
+      })
+      .catch((err) => {
+        console.error('[criarIcone] erro ao buscar dados:', err);
+        alert('Erro na requisição: ' + err);
+      });
   }
 
   function handleFile(e) {
     const file = e.target.files[0];
-    console.log('[handleFile] File selected', file);
-    if (!file) return console.error('[handleFile] No file selected');
+    console.log('[criarIcone] arquivo selecionado:', file);
+    if (!file) {
+      console.error('[criarIcone] nenhum arquivo selecionado');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result);
-        console.log('[handleFile] Parsed JSON', data);
-        processData(data);
+        const json = JSON.parse(reader.result);
+        console.log('[criarIcone] JSON parseado:', json);
+        processData(json);
       } catch (err) {
-        console.error('[handleFile] JSON parse error', err);
+        console.error('[criarIcone] JSON inválido:', err);
         alert('JSON inválido');
       }
     };
@@ -1815,77 +1764,76 @@ export function criarIcone() {
   }
 
   function processData(data) {
-    console.log('[processData] Received data', data);
+    console.log('[criarIcone] processando dados:', data);
     if (!Array.isArray(data)) {
-      console.error('[processData] Data is not an array');
+      console.error('[criarIcone] dados não são um array');
       alert('O JSON deve ser um array de objetos');
       return;
     }
     latestData = data;
-    console.log('[processData] latestData set');
     const props = Object.keys(data[0] || {});
-    console.log('[processData] Properties:', props);
-    const respDiv = document.getElementById('widgetResponseProps');
-    respDiv.innerHTML =
+    console.log('[criarIcone] propriedades encontradas:', props);
+    document.getElementById('widgetResponseProps').innerHTML =
       '<strong>Propriedades:</strong><ul>' +
       props.map((p) => `<li>${p}</li>`).join('') +
       '</ul>';
     const sel = document.getElementById('widgetPropSelect');
-    sel.innerHTML = props
-      .map((p) => `<option value="${p}">${p}</option>`)
-      .join('');
-    const selDiv = document.getElementById('widgetPropSelection');
-    selDiv.style.display = 'block';
+    sel.innerHTML = props.map((p) => `<option>${p}</option>`).join('');
+    document.getElementById('widgetPropSelection').style.display = 'block';
     document.getElementById('widgetCreateChartBtn').onclick = () =>
       createChartForProp(sel.value);
   }
 
   function createChartForProp(prop) {
-    console.log('[createChartForProp] prop selected:', prop);
+    console.log('[criarIcone] criando gráfico para propriedade:', prop);
     if (!latestData) {
-      console.error('[createChartForProp] latestData is null');
-      return alert('Carregue os dados antes de criar o gráfico');
+      console.error('[criarIcone] nenhum dado carregado');
+      alert('Carregue os dados antes de criar o gráfico');
+      return;
     }
-    const type = document.getElementById('widgetChartType').value.toLowerCase();
-    console.log('[createChartForProp] chart type:', type);
+
+    const agrupado = latestData.reduce((acc, item) => {
+      const key = item[prop] ?? '–';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const labels = Object.keys(agrupado);
+    const valores = Object.values(agrupado);
+    console.log('[criarIcone] rótulos e valores:', labels, valores);
+
+    const canvas = document.createElement('canvas');
+    canvas.style.maxWidth = '600px';
+    canvas.style.display = 'block';
+    canvas.style.margin = '20px auto';
+    const ctx = canvas.getContext('2d');
+
     try {
-      const agrupado = latestData.reduce((acc, item) => {
-        const key = item[prop] ?? '–';
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-      console.log('[createChartForProp] agrupado:', agrupado);
-      const labels = Object.keys(agrupado);
-      const valores = Object.values(agrupado);
-      console.log('[createChartForProp] labels:', labels, 'valores:', valores);
-
-      const canvas = document.createElement('canvas');
-      canvas.style.maxWidth = '600px';
-      canvas.style.display = 'block';
-      canvas.style.margin = '20px auto';
-      const ctx = canvas.getContext('2d');
-
-      const backgroundColors = gerarCores(labels);
-      console.log('[createChartForProp] backgroundColors:', backgroundColors);
-
       new Chart(ctx, {
-        type,
+        type: document.getElementById('widgetChartType').value.toLowerCase(),
         data: {
           labels,
-          datasets: [{ data: valores, backgroundColor: backgroundColors }],
+          datasets: [{ data: valores, backgroundColor: gerarCores(labels) }],
         },
         options: {
           responsive: true,
           plugins: { legend: { position: 'bottom' } },
         },
       });
-      document.body.appendChild(canvas);
-      console.log('[createChartForProp] Chart appended to body');
+      targetContainer.appendChild(canvas);
+      console.log('[criarIcone] gráfico anexado no containerDestino');
     } catch (err) {
-      console.error('[createChartForProp] Error creating chart:', err);
+      console.error('[criarIcone] erro ao criar gráfico:', err);
       alert('Erro ao criar gráfico: ' + err.message);
     }
   }
 
-  console.log('[criarIcone] Initialization complete');
+  function gerarCores(labels) {
+    const count = labels.length;
+    return labels.map((_, i) => {
+      const hue = Math.round((i * 360) / count);
+      return `hsl(${hue},65%,55%)`;
+    });
+  }
+
+  console.log('[criarIcone] inicialização concluída');
 }
