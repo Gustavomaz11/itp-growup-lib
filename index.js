@@ -1623,7 +1623,7 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
   });
 }
 
-function initFloatingWidget() {
+export function criarIcone() {
   // Ícone flutuante
   const widgetIcon = document.createElement('button');
   widgetIcon.id = 'floatingWidgetIcon';
@@ -1815,5 +1815,3 @@ function initFloatingWidget() {
     );
   }
 }
-
-initFloatingWidget();
