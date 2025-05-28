@@ -1624,27 +1624,11 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
 }
 
 /**
- * Gera automaticamente uma paleta de cores HSL
- * com quantidade igual ao número de labels.
- * @param {string[]} labels
- * @returns {string[]} array de hsl strings
+ * Cria o ícone flutuante e a janela de configuração.
+ * O parâmetro chartContainer indica onde os gráficos serão inseridos.
  */
-function gerarCores(labels) {
-  const count = labels.length;
-  return labels.map((_, i) => {
-    const hue = Math.round((i * 360) / count);
-    return `hsl(${hue}, 65%, 55%)`;
-  });
-}
-
-export function criarIcone(targetContainer) {
-  console.log('[criarIcone] iniciado com containerDestino:', targetContainer);
-  if (!targetContainer || !(targetContainer instanceof HTMLElement)) {
-    console.error(
-      '[criarIcone] container inválido! Passe um elemento DOM válido.',
-    );
-    return;
-  }
+export function criarIcone(chartContainer) {
+  console.log('[criarIcone] iniciado. chartContainer:', chartContainer);
 
   // Ícone flutuante
   const widgetIcon = document.createElement('button');
@@ -1711,7 +1695,7 @@ export function criarIcone(targetContainer) {
         <label>Tipo de Gráfico:</label><select id="widgetChartType" style="width:100%; margin-bottom:8px;">
           <option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option>
         </select>
-        <button id="widgetCreateChartBtn" style="width:100%;">Criar Gráfico</button>
+        <button id="widgetCreateChartBtn" style="width:100%">Criar Gráfico</button>
       </div>
     `;
     document.getElementById('widgetFetchBtn').onclick = handleFetch;
@@ -1819,8 +1803,14 @@ export function criarIcone(targetContainer) {
           plugins: { legend: { position: 'bottom' } },
         },
       });
-      targetContainer.appendChild(canvas);
-      console.log('[criarIcone] gráfico anexado no containerDestino');
+      if (!chartContainer || !(chartContainer instanceof HTMLElement)) {
+        console.error(
+          '[criarIcone] chartContainer inválido na criação do gráfico',
+        );
+        return;
+      }
+      chartContainer.appendChild(canvas);
+      console.log('[criarIcone] gráfico anexado em chartContainer');
     } catch (err) {
       console.error('[criarIcone] erro ao criar gráfico:', err);
       alert('Erro ao criar gráfico: ' + err.message);
