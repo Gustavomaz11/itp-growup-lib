@@ -1649,6 +1649,7 @@ export function criarIcone(chartContainer) {
     bottom: '20px',
     right: '20px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+    userSelect: 'none',
   });
   document.body.appendChild(widgetIcon);
   console.log('[criarIcone] ícone injetado no corpo do documento');
@@ -1669,9 +1670,93 @@ export function criarIcone(chartContainer) {
   document.body.appendChild(widgetWindow);
   console.log('[criarIcone] janela de configuração criada');
 
+  // --- Drag & drop ---
+  let isDragging = false;
+  let offsetX = 0,
+    offsetY = 0;
+  let justDragged = false;
+
+  function onMouseDown(e) {
+    isDragging = true;
+    justDragged = false;
+    // passa de bottom/right para top/left para controlar posição
+    widgetIcon.style.right = 'auto';
+    widgetIcon.style.bottom = 'auto';
+
+    const rect = widgetIcon.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+    console.log('[criarIcone] drag iniciado em:', rect.left, rect.top);
+
+    document.addEventListener('mousemove', onMouseMove);
+  }
+
+  function onMouseMove(e) {
+    if (!isDragging) return;
+    const width = widgetIcon.offsetWidth;
+    const height = widgetIcon.offsetHeight;
+    let x = e.clientX - offsetX;
+    let y = e.clientY - offsetY;
+    // limita dentro da viewport
+    x = Math.max(0, Math.min(window.innerWidth - width, x));
+    y = Math.max(0, Math.min(window.innerHeight - height, y));
+    widgetIcon.style.left = `${x}px`;
+    widgetIcon.style.top = `${y}px`;
+    console.log('[criarIcone] arrastando em:', x, y);
+  }
+
+  function onMouseUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    document.removeEventListener('mousemove', onMouseMove);
+    justDragged = true;
+
+    // snap ao canto mais próximo
+    const rect = widgetIcon.getBoundingClientRect();
+    const distances = {
+      esquerda: rect.left,
+      direita: window.innerWidth - rect.right,
+      topo: rect.top,
+      base: window.innerHeight - rect.bottom,
+    };
+    const nearest = Object.entries(distances).sort((a, b) => a[1] - b[1])[0][0];
+    switch (nearest) {
+      case 'esquerda':
+        widgetIcon.style.left = '20px';
+        break;
+      case 'direita':
+        widgetIcon.style.left = `${
+          window.innerWidth - widgetIcon.offsetWidth - 20
+        }px`;
+        break;
+      case 'topo':
+        widgetIcon.style.top = '20px';
+        break;
+      case 'base':
+        widgetIcon.style.top = `${
+          window.innerHeight - widgetIcon.offsetHeight - 20
+        }px`;
+        break;
+    }
+    console.log('[criarIcone] drag finalizado. Snap para:', nearest);
+
+    // curto delay para evitar que o click subsequente seja interpretado como abertura
+    setTimeout(() => {
+      justDragged = false;
+    }, 100);
+  }
+
+  widgetIcon.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mouseup', onMouseUp);
+  // --- fim Drag & drop ---
+
   let latestData = null;
 
   widgetIcon.addEventListener('click', () => {
+    if (justDragged) {
+      console.log('[criarIcone] clique ignorado (foi drag)');
+      return;
+    }
     widgetWindow.style.display =
       widgetWindow.style.display === 'none' ? 'block' : 'none';
     const rect = widgetIcon.getBoundingClientRect();
