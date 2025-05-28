@@ -1630,6 +1630,16 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
 export function criarIcone(chartContainer) {
   console.log('[criarIcone] iniciado. chartContainer:', chartContainer);
 
+  if (!(chartContainer instanceof HTMLElement)) {
+    console.error(
+      '[criarIcone] ERRO: O parâmetro chartContainer é inválido. Passe um elemento HTML válido onde o gráfico será renderizado.',
+    );
+    alert(
+      'ERRO: Você precisa passar uma div ou container válido onde o gráfico será exibido.',
+    );
+    return;
+  }
+
   // Ícone flutuante
   const widgetIcon = document.createElement('button');
   widgetIcon.id = 'floatingWidgetIcon';
@@ -1652,7 +1662,7 @@ export function criarIcone(chartContainer) {
     userSelect: 'none',
   });
   document.body.appendChild(widgetIcon);
-  console.log('[criarIcone] ícone injetado no corpo do documento');
+  console.log('[criarIcone] Ícone flutuante adicionado na página.');
 
   // Janela de configuração
   const widgetWindow = document.createElement('div');
@@ -1855,16 +1865,18 @@ export function criarIcone(chartContainer) {
   }
 
   function createChartForProp(prop) {
-    console.log('[criarIcone] criando gráfico para propriedade:', prop);
+    console.log('[criarIcone] Criando gráfico para propriedade:', prop);
     if (!latestData) {
-      alert('Carregue os dados antes de criar o gráfico');
+      alert('Carregue os dados antes de criar o gráfico.');
       return;
     }
+
     const agrupado = latestData.reduce((acc, item) => {
       const key = item[prop] ?? '–';
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
+
     const labels = Object.keys(agrupado);
     const valores = Object.values(agrupado);
     const canvas = document.createElement('canvas');
@@ -1873,21 +1885,35 @@ export function criarIcone(chartContainer) {
     canvas.style.margin = '20px auto';
     const ctx = canvas.getContext('2d');
 
-    new Chart(ctx, {
-      type: document.getElementById('widgetChartType').value.toLowerCase(),
-      data: {
-        labels,
-        datasets: [{ data: valores, backgroundColor: gerarCores(labels) }],
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom' } },
-      },
-    });
+    try {
+      new Chart(ctx, {
+        type: document.getElementById('widgetChartType').value.toLowerCase(),
+        data: {
+          labels,
+          datasets: [
+            {
+              data: valores,
+              backgroundColor: gerarCores(labels),
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' },
+          },
+        },
+      });
 
-    if (chartContainer instanceof HTMLElement) {
       chartContainer.appendChild(canvas);
-      console.log('[criarIcone] gráfico anexado em chartContainer');
+      console.log(
+        '[criarIcone] Gráfico criado e renderizado dentro do container informado.',
+      );
+    } catch (error) {
+      console.error('[criarIcone] ERRO ao criar o gráfico:', error);
+      alert(
+        'Erro ao criar o gráfico. Verifique os dados ou o tipo de gráfico.',
+      );
     }
   }
 
@@ -1898,5 +1924,5 @@ export function criarIcone(chartContainer) {
     );
   }
 
-  console.log('[criarIcone] inicialização concluída');
+  console.log('[criarIcone] Inicialização concluída.');
 }
