@@ -1861,13 +1861,9 @@ export function criarIcone(chartContainer) {
       return;
     }
     await loadChartJS();
-    const agrupado = latestData.reduce((acc, item) => {
-      const key = item[prop] ?? '(vazio)';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    const labels = Object.keys(agrupado);
-    const valores = Object.values(agrupado);
+
+    // Prepare container and canvas
+    const chartType = document.getElementById('widgetChartType').value;
     const wrapper = document.createElement('div');
     wrapper.style =
       'margin: 20px 0; padding: 10px; border:1px solid #ccc; background:#fafafa; border-radius:6px;';
@@ -1879,23 +1875,25 @@ export function criarIcone(chartContainer) {
     wrapper.appendChild(canvas);
     chartContainer.appendChild(wrapper);
     const ctx = canvas.getContext('2d');
-    new Chart(ctx, {
-      type: document.getElementById('widgetChartType').value,
-      data: {
-        labels,
-        datasets: [
-          {
-            label: `Contagem de ${prop}`,
-            data: valores,
-            backgroundColor: gerarCores(labels),
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom' } },
-      },
-    });
+
+    // Compute labels for color generation
+    const labels = Array.from(
+      new Set(latestData.map((d) => d[prop] ?? '(vazio)')),
+    );
+    const bgColors = gerarCores(labels);
+
+    // Delegate to criarGrafico for full interactivity, filters, and legend
+    criarGrafico(
+      ctx,
+      chartType,
+      prop,
+      bgColors,
+      `Contagem de ${prop}`,
+      latestData,
+      null, // no callback
+    );
+
+    // Close widget
     widgetWindow.style.display = 'none';
   }
 
