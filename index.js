@@ -1625,19 +1625,24 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
 
 function initFloatingWidget() {
   // Ícone flutuante
-  const widgetIcon = document.createElement('div');
+  const widgetIcon = document.createElement('button');
   widgetIcon.id = 'floatingWidgetIcon';
+  widgetIcon.textContent = 'ITP';
   Object.assign(widgetIcon.style, {
     position: 'fixed',
-    width: '50px',
-    height: '50px',
-    backgroundImage: 'url("pie.svg")',
-    backgroundSize: 'contain',
-    backgroundRepeat: 'no-repeat',
+    width: '60px',
+    height: '60px',
+    background: '#007bff',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '50%',
+    fontWeight: 'bold',
+    fontSize: '16px',
     cursor: 'pointer',
     zIndex: '10000',
     bottom: '20px',
     right: '20px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
   });
   document.body.appendChild(widgetIcon);
 
