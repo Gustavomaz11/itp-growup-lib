@@ -1638,6 +1638,8 @@ function gerarCores(labels) {
 }
 
 export function criarIcone() {
+  console.log('[criarIcone] Initializing widget...');
+
   // Ícone flutuante
   const widgetIcon = document.createElement('button');
   widgetIcon.id = 'floatingWidgetIcon';
@@ -1659,6 +1661,7 @@ export function criarIcone() {
     boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
   });
   document.body.appendChild(widgetIcon);
+  console.log('[criarIcone] Widget icon appended to body');
 
   // Draggable
   let isDragging = false,
@@ -1669,6 +1672,7 @@ export function criarIcone() {
     const rect = widgetIcon.getBoundingClientRect();
     offsetX = e.clientX - rect.left;
     offsetY = e.clientY - rect.top;
+    console.log('[criarIcone] Drag start', { offsetX, offsetY });
   });
   document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
@@ -1684,32 +1688,38 @@ export function criarIcone() {
   document.addEventListener('mouseup', () => {
     if (!isDragging) return;
     isDragging = false;
+    console.log('[criarIcone] Drag end');
     // Snap to nearest edge
-    const rect = widgetIcon.getBoundingClientRect();
-    const distances = {
-      left: rect.left,
-      right: window.innerWidth - rect.right,
-      top: rect.top,
-      bottom: window.innerHeight - rect.bottom,
-    };
-    const edge = Object.keys(distances).reduce((a, b) =>
-      distances[a] < distances[b] ? a : b,
-    );
-    switch (edge) {
-      case 'left':
-        widgetIcon.style.left = '0px';
-        break;
-      case 'right':
-        widgetIcon.style.left =
-          window.innerWidth - widgetIcon.offsetWidth + 'px';
-        break;
-      case 'top':
-        widgetIcon.style.top = '0px';
-        break;
-      case 'bottom':
-        widgetIcon.style.top =
-          window.innerHeight - widgetIcon.offsetHeight + 'px';
-        break;
+    try {
+      const rect = widgetIcon.getBoundingClientRect();
+      const distances = {
+        left: rect.left,
+        right: window.innerWidth - rect.right,
+        top: rect.top,
+        bottom: window.innerHeight - rect.bottom,
+      };
+      const edge = Object.keys(distances).reduce((a, b) =>
+        distances[a] < distances[b] ? a : b,
+      );
+      switch (edge) {
+        case 'left':
+          widgetIcon.style.left = '0px';
+          break;
+        case 'right':
+          widgetIcon.style.left =
+            window.innerWidth - widgetIcon.offsetWidth + 'px';
+          break;
+        case 'top':
+          widgetIcon.style.top = '0px';
+          break;
+        case 'bottom':
+          widgetIcon.style.top =
+            window.innerHeight - widgetIcon.offsetHeight + 'px';
+          break;
+      }
+      console.log('[criarIcone] Snapped to edge:', edge);
+    } catch (err) {
+      console.error('[criarIcone] Error snapping to edge:', err);
     }
   });
 
@@ -1727,6 +1737,7 @@ export function criarIcone() {
     display: 'none',
   });
   document.body.appendChild(widgetWindow);
+  console.log('[criarIcone] Widget window created');
 
   widgetIcon.addEventListener('click', () => {
     widgetWindow.style.display =
@@ -1734,12 +1745,17 @@ export function criarIcone() {
     const rect = widgetIcon.getBoundingClientRect();
     widgetWindow.style.top = rect.bottom + 5 + 'px';
     widgetWindow.style.left = rect.left + 'px';
+    console.log(
+      '[criarIcone] Widget window toggled, now',
+      widgetWindow.style.display,
+    );
     renderWidgetWindowContent();
   });
 
   let latestData = null;
 
   function renderWidgetWindowContent() {
+    console.log('[renderWidgetWindowContent] Rendering window content');
     widgetWindow.innerHTML = `
       <div>
         <label>Endpoint:</label>
@@ -1769,21 +1785,29 @@ export function criarIcone() {
 
   function handleFetch() {
     const endpoint = document.getElementById('widgetEndpoint').value;
-    if (!endpoint) return alert('Informe o endpoint');
+    console.log('[handleFetch] Fetching endpoint', endpoint);
+    if (!endpoint) return console.error('[handleFetch] No endpoint provided');
     fetch(endpoint)
-      .then((res) => res.json())
+      .then((res) => {
+        console.log('[handleFetch] Response status', res.status);
+        return res.json();
+      })
       .then((data) => processData(data))
-      .catch((err) => alert('Erro: ' + err));
+      .catch((err) => console.error('[handleFetch] Fetch error', err));
   }
 
   function handleFile(e) {
     const file = e.target.files[0];
-    if (!file) return;
+    console.log('[handleFile] File selected', file);
+    if (!file) return console.error('[handleFile] No file selected');
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        processData(JSON.parse(reader.result));
-      } catch {
+        const data = JSON.parse(reader.result);
+        console.log('[handleFile] Parsed JSON', data);
+        processData(data);
+      } catch (err) {
+        console.error('[handleFile] JSON parse error', err);
         alert('JSON inválido');
       }
     };
@@ -1791,10 +1815,16 @@ export function criarIcone() {
   }
 
   function processData(data) {
+    console.log('[processData] Received data', data);
+    if (!Array.isArray(data)) {
+      console.error('[processData] Data is not an array');
+      alert('O JSON deve ser um array de objetos');
+      return;
+    }
     latestData = data;
-    const props = Array.isArray(data)
-      ? Object.keys(data[0] || {})
-      : Object.keys(data);
+    console.log('[processData] latestData set');
+    const props = Object.keys(data[0] || {});
+    console.log('[processData] Properties:', props);
     const respDiv = document.getElementById('widgetResponseProps');
     respDiv.innerHTML =
       '<strong>Propriedades:</strong><ul>' +
@@ -1811,48 +1841,51 @@ export function criarIcone() {
   }
 
   function createChartForProp(prop) {
+    console.log('[createChartForProp] prop selected:', prop);
+    if (!latestData) {
+      console.error('[createChartForProp] latestData is null');
+      return alert('Carregue os dados antes de criar o gráfico');
+    }
     const type = document.getElementById('widgetChartType').value.toLowerCase();
+    console.log('[createChartForProp] chart type:', type);
+    try {
+      const agrupado = latestData.reduce((acc, item) => {
+        const key = item[prop] ?? '–';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      console.log('[createChartForProp] agrupado:', agrupado);
+      const labels = Object.keys(agrupado);
+      const valores = Object.values(agrupado);
+      console.log('[createChartForProp] labels:', labels, 'valores:', valores);
 
-    // Agrupa dados por categoria
-    const agrupado = latestData.reduce((acc, item) => {
-      const key = item[prop] ?? '–';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    const labels = Object.keys(agrupado);
-    const valores = Object.values(agrupado);
+      const canvas = document.createElement('canvas');
+      canvas.style.maxWidth = '600px';
+      canvas.style.display = 'block';
+      canvas.style.margin = '20px auto';
+      const ctx = canvas.getContext('2d');
 
-    // Cria canvas e contexto
-    const canvas = document.createElement('canvas');
-    canvas.style.maxWidth = '600px';
-    canvas.style.display = 'block';
-    canvas.style.margin = '20px auto';
-    const ctx = canvas.getContext('2d');
+      const backgroundColors = gerarCores(labels);
+      console.log('[createChartForProp] backgroundColors:', backgroundColors);
 
-    // Gera cores automaticamente
-    const backgroundColors = gerarCores(labels);
-
-    // Renderiza com Chart.js
-    new Chart(ctx, {
-      type,
-      data: {
-        labels,
-        datasets: [
-          {
-            data: valores,
-            backgroundColor: backgroundColors,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { position: 'bottom' },
+      new Chart(ctx, {
+        type,
+        data: {
+          labels,
+          datasets: [{ data: valores, backgroundColor: backgroundColors }],
         },
-      },
-    });
-
-    // Insere o gráfico diretamente no <body>
-    document.body.appendChild(canvas);
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+        },
+      });
+      document.body.appendChild(canvas);
+      console.log('[createChartForProp] Chart appended to body');
+    } catch (err) {
+      console.error('[createChartForProp] Error creating chart:', err);
+      alert('Erro ao criar gráfico: ' + err.message);
+    }
   }
+
+  console.log('[criarIcone] Initialization complete');
 }
