@@ -1,7 +1,3 @@
-**README.md**
-
----
-
 ## ITP-GROWUP-LIB
 
 Biblioteca JavaScript para criação de gráficos interativos, tabelas virtuais e widgets dinâmicos. Integra-se com Chart.js, jsPDF e html2canvas para fornecer funcionalidades completas de visualização, filtragem e exportação de relatórios em PDF.
