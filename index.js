@@ -1006,6 +1006,7 @@ function calcularEstatisticasGrafico(dados, categoryField) {
 }
 
 /**
+<<<<<<< HEAD
  * Gera um relatório PDF com verificações robustas para evitar erros
  */
 
@@ -1485,6 +1486,106 @@ export function criarGraficoBolha(
   }
 
   renderizar();
+=======
+ * Cria um gráfico de bolhas que reage aos filtros aplicados.
+ * @param {HTMLElement} ctx - Contexto do canvas onde o gráfico será renderizado.
+ * @param {string} eixoX - Campo do eixo X.
+ * @param {string} eixoY - Campo do eixo Y.
+ * @param {string} raio - Campo que define o tamanho das bolhas.
+ * @param {Array} dadosOriginais - Dados de entrada para o gráfico.
+ * @param {Array<string>} cores - Array de cores para as bolhas.
+ */
+export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores) {
+  const dadosOriginaisCopy = [...dadosOriginais]; // Mantém os dados originais imutáveis
+  let grafico;
+
+  // Converte strings para números com base na contagem de ocorrências
+  function converterParaNumeros(dados, campo) {
+    const contagem = {};
+    let contador = 1;
+
+    dados.forEach((item) => {
+      const valor = item[campo];
+      if (!(valor in contagem)) {
+        contagem[valor] = contador++;
+      }
+    });
+
+    return (valor) => contagem[valor] || 0;
+  }
+
+  function renderizarBolhas() {
+    const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
+
+    // Verifica se os campos são strings e os converte se necessário
+    const isXString = dadosFiltrados.some((item) => isNaN(parseFloat(item[eixoX])));
+    const isYString = dadosFiltrados.some((item) => isNaN(parseFloat(item[eixoY])));
+    const isRaioString = dadosFiltrados.some((item) => isNaN(parseFloat(item[raio])));
+
+    const xConverter = isXString ? converterParaNumeros(dadosFiltrados, eixoX) : (v) => parseFloat(v) || 0;
+    const yConverter = isYString ? converterParaNumeros(dadosFiltrados, eixoY) : (v) => parseFloat(v) || 0;
+    const raioConverter = isRaioString ? converterParaNumeros(dadosFiltrados, raio) : (v) => parseFloat(v) || 5;
+
+    // Processa os dados para criar os pontos do gráfico
+    const dadosGrafico = dadosFiltrados.map((item, index) => ({
+      x: xConverter(item[eixoX]),
+      y: yConverter(item[eixoY]),
+      r: raioConverter(item[raio]),
+      backgroundColor: cores[index % cores.length], // Cicla pelas cores fornecidas
+    }));
+
+    if (grafico) {
+      // Atualiza o gráfico existente
+      grafico.data.datasets[0].data = dadosGrafico;
+      grafico.update();
+    } else {
+      // Configuração inicial do gráfico de bolhas
+      const config = {
+        type: 'bubble',
+        data: {
+          datasets: [
+            {
+              label: `Gráfico de Bolhas (${eixoX}, ${eixoY}, ${raio})`,
+              data: dadosGrafico,
+              backgroundColor: dadosGrafico.map((d) => d.backgroundColor),
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: eixoX,
+              },
+              beginAtZero: true,
+            },
+            y: {
+              title: {
+                display: true,
+                text: eixoY,
+              },
+              beginAtZero: true,
+            },
+          },
+        },
+      };
+
+      // Cria o gráfico
+      grafico = new Chart(ctx, config);
+    }
+  }
+
+  // Renderiza pela primeira vez
+  renderizarBolhas();
+
+  // Registra o gráfico para reagir a atualizações globais
+  todosOsGraficos.push({
+    grafico,
+    renderizar: renderizarBolhas, // Define o método de renderização para atualizações
+  });
+>>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
 }
 
 /**
@@ -1495,6 +1596,7 @@ export function criarGraficoBolha(
  * @param {Array<Object>} obj - Array de dados originais.
  * @param {string} titulo - Título do gráfico.
  */
+<<<<<<< HEAD
 export function criarGraficoMisto(ctx, obj, titulo = '') {
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   let grafico;
@@ -1558,6 +1660,32 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
       'rgba(139, 69, 19, 0.7)', // Repete Marrom
       'rgba(75, 192, 192, 0.7)', // Repete Verde
     ];
+=======
+export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
+  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
+  let grafico;
+
+  function renderizar() {
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    const agrupado = {};
+
+    dadosFiltrados.forEach((item) => {
+      const label = item[eixoX];
+      const valor = parseFloat(item[eixoY]);
+      if (!label || isNaN(valor)) return;
+
+      if (!agrupado[label]) {
+        agrupado[label] = { soma: 0, count: 0 };
+      }
+
+      agrupado[label].soma += valor;
+      agrupado[label].count += 1;
+    });
+
+    const labels = Object.keys(agrupado);
+    const soma = labels.map((l) => agrupado[l].soma);
+    const media = labels.map((l) => agrupado[l].soma / agrupado[l].count);
+>>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
 
     if (grafico) {
       grafico.destroy();
@@ -1566,6 +1694,7 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
     grafico = new Chart(ctx, {
       type: 'bar',
       data: {
+<<<<<<< HEAD
         labels: labels,
         datasets: [
           {
@@ -1588,6 +1717,27 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
             tension: 0.3,
             fill: false,
             yAxisID: 'y',
+=======
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Soma de ' + eixoY,
+            data: soma,
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1,
+          },
+          {
+            type: 'line',
+            label: 'Média de ' + eixoY,
+            data: media,
+            borderColor: 'rgba(255, 99, 132, 1)',
+            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+>>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
           },
         ],
       },
@@ -1603,19 +1753,31 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
           },
         },
         scales: {
+<<<<<<< HEAD
           x: {
             // Configurações do eixo X
           },
+=======
+>>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
           y: {
             beginAtZero: true,
           },
         },
       },
     });
+<<<<<<< HEAD
   } // Primeiro render
 
   renderizar(); // Registra para reagir a filtros globais (se aplicável)
 
+=======
+  }
+
+  // Primeiro render
+  renderizar();
+
+  // Registra para reagir aos filtros globais
+>>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
   todosOsGraficos.push({
     grafico,
     dadosOriginais,
@@ -1623,6 +1785,7 @@ export function criarGraficoMisto(ctx, obj, titulo = '') {
   });
 }
 
+<<<<<<< HEAD
 /**
  * Cria o ícone flutuante, janela de configuração e gráficos dinâmicos.
  * O parâmetro chartContainer indica onde os gráficos serão renderizados.
@@ -1906,3 +2069,7 @@ export function criarIcone(chartContainer) {
 
   console.log('[criarIcone] Inicialização concluída');
 }
+=======
+
+
+>>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
