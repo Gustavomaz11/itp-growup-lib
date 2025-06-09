@@ -382,15 +382,18 @@ export function criarGrafico(
   // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
   //
   function renderizar() {
+    // 1) filtra os dados originais conforme todos os filtros ativos
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
+    // 2) monta labels/valores de acordo com o tipo de agregação
     if (aggregationType === 'count') {
       if (porDuracao === false) {
-        if (!parametro_busca_fim)
+        if (!parametro_busca_fim) {
           throw new Error(
             'parametro_busca_fim obrigatório quando porDuracao=false',
           );
+        }
         ({ labels, valores } = processarDuracaoAtendimentos(
           dadosFiltrados,
           parametro_busca,
@@ -400,10 +403,11 @@ export function criarGrafico(
         ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
       }
     } else if (aggregationType === 'sum' || aggregationType === 'mean') {
-      if (!valueField)
+      if (!valueField) {
         throw new Error(
           'valueField obrigatório quando aggregationType for "sum" ou "mean"',
         );
+      }
       ({ labels, valores } = processarDadosAgregado(
         dadosFiltrados,
         parametro_busca,
@@ -414,92 +418,100 @@ export function criarGrafico(
       throw new Error('aggregationType deve ser "count", "sum" ou "mean"');
     }
 
+    // 3) guarda para possível debugging
     lastLabels = labels;
     lastValores = valores;
 
+    // 4) se o gráfico já existe, atualiza os dados; caso contrário, cria pela primeira vez
     if (grafico) {
-      grafico.destroy();
-      const idx = todosOsGraficos.findIndex((g) => g.grafico === grafico);
-      if (idx > -1) todosOsGraficos.splice(idx, 1);
-    }
+      grafico.data.labels = labels;
+      grafico.data.datasets[0].data = valores;
+      grafico.update();
 
-    const config = {
-      type: tipoAtual,
-      data: {
-        labels,
-        datasets: [
-          {
-            label: chave,
-            data: valores,
-            backgroundColor: Array.isArray(backgroundColor)
-              ? backgroundColor.slice(0, labels.length)
-              : backgroundColor || 'rgba(0,0,0,0.1)',
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        scales:
-          tipoAtual === 'bar' || tipoAtual === 'line'
-            ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
-            : undefined,
-        plugins: {
-          legend: {
-            display: true,
-            labels: {
-              generateLabels: (chart) => {
-                const ds = chart.data.datasets[0];
-                return chart.data.labels.map((lab, i) => ({
-                  text: lab,
-                  fillStyle: Array.isArray(ds.backgroundColor)
-                    ? ds.backgroundColor[i] || 'rgba(0,0,0,0.1)'
-                    : ds.backgroundColor || 'rgba(0,0,0,0.1)',
-                  hidden: !chart.getDataVisibility(i),
-                  index: i,
-                }));
+      // mantém o total atualizado no array de gráficos
+      const entry = todosOsGraficos.find((g) => g.grafico === grafico);
+      if (entry) entry.ultimoTotal = dadosFiltrados.length;
+    } else {
+      // configuração inicial do Chart.js
+      const config = {
+        type: tipoAtual,
+        data: {
+          labels,
+          datasets: [
+            {
+              label: chave,
+              data: valores,
+              backgroundColor: Array.isArray(backgroundColor)
+                ? backgroundColor.slice(0, labels.length)
+                : backgroundColor || 'rgba(0,0,0,0.1)',
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales:
+            tipoAtual === 'bar' || tipoAtual === 'line'
+              ? { x: { beginAtZero: true }, y: { beginAtZero: true } }
+              : undefined,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                generateLabels: (chart) => {
+                  const ds = chart.data.datasets[0];
+                  return chart.data.labels.map((lab, i) => ({
+                    text: lab,
+                    fillStyle: Array.isArray(ds.backgroundColor)
+                      ? ds.backgroundColor[i] || 'rgba(0,0,0,0.1)'
+                      : ds.backgroundColor || 'rgba(0,0,0,0.1)',
+                    hidden: !chart.getDataVisibility(i),
+                    index: i,
+                  }));
+                },
+              },
+              onClick: function (_, item, legend) {
+                const val = legend.chart.data.labels[item.index];
+                toggleFiltro(parametro_busca, val);
+                atualizarTodosOsGraficos();
               },
             },
-            // CLIQUE NA LEGENDA FUNCIONA PARA TODOS OS TIPOS!
-            onClick: function (_, item, legend) {
-              // 'legend.chart' garante a referência sempre correta
-              const val = legend.chart.data.labels[item.index];
+          },
+          onClick: function (e, elements) {
+            if (elements.length) {
+              const idx = elements[0].index;
+              const val = this.data.labels[idx];
               toggleFiltro(parametro_busca, val);
               atualizarTodosOsGraficos();
-            },
+            }
           },
         },
-        // CLIQUE DIRETO NA BARRA/LINHA
-        onClick: function (e, elements) {
-          if (elements && elements.length > 0) {
-            const idx = elements[0].index;
-            const val = this.data.labels[idx]; // 'this' é o gráfico!
-            toggleFiltro(parametro_busca, val);
-            atualizarTodosOsGraficos();
-          }
-        },
-      },
-    };
+      };
 
-    grafico = new Chart(ctx, config);
-    grafico._parametro_busca = parametro_busca;
+      // cria o gráfico e registra no array para futuras atualizações
+      grafico = new Chart(ctx, config);
+      grafico._parametro_busca = parametro_busca;
 
-    const total = dadosFiltrados.length;
-    todosOsGraficos.push({
-      grafico,
-      dadosOriginais,
-      parametro_busca,
-      porDuracao,
-      parametro_busca_fim,
-      callback,
-      aggregationType,
-      valueField,
-      renderizar, // Salva para reuso
-      ultimoTotal: total,
-    });
+      todosOsGraficos.push({
+        grafico,
+        dadosOriginais,
+        parametro_busca,
+        porDuracao,
+        parametro_busca_fim,
+        callback,
+        aggregationType,
+        valueField,
+        renderizar,
+        ultimoTotal: dadosFiltrados.length,
+      });
+    }
 
-    if (callback) {
-      callback({ total, variacaoTexto: null });
+    // 5) callback de total/variação (se houver)
+    if (typeof callback === 'function') {
+      callback({
+        total: dadosFiltrados.length,
+        variacaoTexto: null,
+      });
     }
   }
 
@@ -622,7 +634,6 @@ function toggleFiltro(parametro, valor) {
   // atualiza tudo
   atualizarTodosOsGraficos();
   atualizarTodasAsTabelas();
-  atualizarTodosOsKPIs(); // Nova linha para atualizar KPIs
 }
 
 function atualizarTodosOsGraficos() {
