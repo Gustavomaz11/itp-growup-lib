@@ -278,12 +278,12 @@ export function criarGrafico(
   aggregationType = 'count', // 'count' | 'sum' | 'mean'
   valueField = null, // campo numérico para sum/mean
 ) {
+  // 0) cópia dos dados e estado interno
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
-  let tipoAtual = tipoInicial;
   let grafico;
   let lastLabels = [];
   let lastValores = [];
-
+  let tipoAtual = tipoInicial;
   const wrapper = ctx.canvas.parentNode;
 
   //
@@ -381,12 +381,22 @@ export function criarGrafico(
   //
   // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
   //
+  // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
   function renderizar() {
-    // 1) filtra os dados originais conforme todos os filtros ativos
+    // 1) calcula a chave de filtro de duração e o handler de clique
+    const durKey = `${parametro_busca}|${parametro_busca_fim}_duracao`;
+    const clickHandler = (val) => {
+      // se for histograma de duração, usa durKey; caso contrário, usa parametro_busca
+      const chaveFiltro = porDuracao ? parametro_busca : durKey;
+      toggleFiltro(chaveFiltro, val);
+      atualizarTodosOsGraficos();
+    };
+
+    // 2) filtra os dados originais conforme filtrosAtuais
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
-    // 2) monta labels/valores de acordo com o tipo de agregação
+    // 3) monta labels/valores conforme aggregationType
     if (aggregationType === 'count') {
       if (porDuracao === false) {
         if (!parametro_busca_fim) {
@@ -405,7 +415,7 @@ export function criarGrafico(
     } else if (aggregationType === 'sum' || aggregationType === 'mean') {
       if (!valueField) {
         throw new Error(
-          'valueField obrigatório quando aggregationType for "sum" ou "mean"',
+          'valueField obrigatório para aggregationType "sum" ou "mean"',
         );
       }
       ({ labels, valores } = processarDadosAgregado(
@@ -418,21 +428,22 @@ export function criarGrafico(
       throw new Error('aggregationType deve ser "count", "sum" ou "mean"');
     }
 
-    // 3) guarda para possível debugging
+    // 4) guarda para debug
     lastLabels = labels;
     lastValores = valores;
 
-    // 4) se o gráfico já existe, atualiza os dados; caso contrário, cria pela primeira vez
+    // 5) Atualiza ou cria o Chart.js
     if (grafico) {
+      // atualização simples de dados
       grafico.data.labels = labels;
       grafico.data.datasets[0].data = valores;
       grafico.update();
 
-      // mantém o total atualizado no array de gráficos
+      // atualiza último total registrado
       const entry = todosOsGraficos.find((g) => g.grafico === grafico);
       if (entry) entry.ultimoTotal = dadosFiltrados.length;
     } else {
-      // configuração inicial do Chart.js
+      // configuração inicial
       const config = {
         type: tipoAtual,
         data: {
@@ -445,6 +456,7 @@ export function criarGrafico(
                 ? backgroundColor.slice(0, labels.length)
                 : backgroundColor || 'rgba(0,0,0,0.1)',
               borderWidth: 1,
+              parsing: false, // para dados do tipo {x,y,r} em bubble, se aplicável
             },
           ],
         },
@@ -470,25 +482,25 @@ export function criarGrafico(
                   }));
                 },
               },
+              // usa o clickHandler em vez de toggle direto
               onClick: function (_, item, legend) {
                 const val = legend.chart.data.labels[item.index];
-                toggleFiltro(parametro_busca, val);
-                atualizarTodosOsGraficos();
+                clickHandler(val);
               },
             },
           },
+          // clique direto no elemento (barra, ponto, bolha...)
           onClick: function (e, elements) {
             if (elements.length) {
               const idx = elements[0].index;
               const val = this.data.labels[idx];
-              toggleFiltro(parametro_busca, val);
-              atualizarTodosOsGraficos();
+              clickHandler(val);
             }
           },
         },
       };
 
-      // cria o gráfico e registra no array para futuras atualizações
+      // cria o gráfico e registra para futuras atualizações
       grafico = new Chart(ctx, config);
       grafico._parametro_busca = parametro_busca;
 
@@ -506,12 +518,9 @@ export function criarGrafico(
       });
     }
 
-    // 5) callback de total/variação (se houver)
+    // 6) dispara callback de total/variação, se houver
     if (typeof callback === 'function') {
-      callback({
-        total: dadosFiltrados.length,
-        variacaoTexto: null,
-      });
+      callback({ total: dadosFiltrados.length, variacaoTexto: null });
     }
   }
 
