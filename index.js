@@ -157,15 +157,18 @@ function processarDadosAgregado(dados, campoGroup, campoValor, tipo) {
     sumMap.set(key, (sumMap.get(key) || 0) + val);
   });
 
-  // mantém ordem de aparição
+  // Mantém ordem de aparição
   const labels = Array.from(
     new Set(dados.map((item) => item[campoGroup]).filter((v) => v != null)),
   );
 
   const valores = labels.map((label) => {
-    if (tipo === 'sum') return sumMap.get(label);
-    if (tipo === 'mean') return sumMap.get(label) / countMap.get(label);
-    return countMap.get(label);
+    if (tipo === 'sum') return sumMap.get(label) ?? 0;
+    if (tipo === 'mean') {
+      const count = countMap.get(label) ?? 0;
+      return count > 0 ? (sumMap.get(label) ?? 0) / count : 0;
+    }
+    return countMap.get(label) ?? 0;
   });
 
   return { labels, valores };
@@ -457,19 +460,20 @@ export function criarGrafico(
                 }));
               },
             },
-            // AQUI GARANTE O CLIQUE PARA TODOS OS TIPOS!
-            onClick: (_, item) => {
-              const val = grafico.data.labels[item.index];
+            // CLIQUE NA LEGENDA FUNCIONA PARA TODOS OS TIPOS!
+            onClick: function (_, item, legend) {
+              // 'legend.chart' garante a referência sempre correta
+              const val = legend.chart.data.labels[item.index];
               toggleFiltro(parametro_busca, val);
               atualizarTodosOsGraficos();
             },
           },
         },
-        // ATIVA O CLIQUE NO ELEMENTO (barra/linha)
-        onClick: (e, elements) => {
+        // CLIQUE DIRETO NA BARRA/LINHA
+        onClick: function (e, elements) {
           if (elements && elements.length > 0) {
             const idx = elements[0].index;
-            const val = grafico.data.labels[idx];
+            const val = this.data.labels[idx]; // 'this' é o gráfico!
             toggleFiltro(parametro_busca, val);
             atualizarTodosOsGraficos();
           }
