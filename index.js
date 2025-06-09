@@ -265,6 +265,7 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
  * @param porDuracao           true=normal / false=histograma de duração
  * @param parametro_busca_fim  campo de fim se porDuracao=false
  */
+
 export function criarGrafico(
   ctx,
   tipoInicial,
@@ -280,7 +281,7 @@ export function criarGrafico(
 ) {
   // 0) cópia dos dados e estado interno
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
-  let grafico;
+  let grafico = null;
   let lastLabels = [];
   let lastValores = [];
   let tipoAtual = tipoInicial;
@@ -308,7 +309,7 @@ export function criarGrafico(
       marginBottom: '8px',
     });
 
-    // 1.1) Botão "Todos" para resetar filtro de ano
+    // Botão "Todos"
     const btnAll = document.createElement('button');
     btnAll.textContent = 'Todos';
     btnAll.style.cursor = 'pointer';
@@ -318,7 +319,7 @@ export function criarGrafico(
     });
     periodDiv.appendChild(btnAll);
 
-    // 1.2) Botões de ANO dinamicamente extraídos do JSON
+    // Botões de ANO
     const anos = Array.from(
       new Set(dadosOriginais.map((item) => item[dateField].slice(0, 4))),
     );
@@ -327,29 +328,39 @@ export function criarGrafico(
       btn.textContent = ano;
       btn.style.cursor = 'pointer';
       btn.addEventListener('click', () => {
-        delete filtrosAtuais[`${dateField}_ano`];
         filtrosAtuais[`${dateField}_ano`] = [ano];
         atualizarTodosOsGraficos();
       });
       periodDiv.appendChild(btn);
     });
 
-    // 2) Select MENSAL (usa dateField e respeita filtro de ano)
+    // Select MÊS
     const selMes = document.createElement('select');
     selMes.appendChild(new Option('Todos meses', ''));
+    const ordemMeses = [
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
+    ];
     ordemMeses.forEach((mes) => selMes.appendChild(new Option(mes, mes)));
     selMes.addEventListener('change', (e) => {
       const val = e.target.value;
-      if (!val) {
-        delete filtrosAtuais[dateField];
-      } else {
-        filtrosAtuais[dateField] = [val];
-      }
+      if (!val) delete filtrosAtuais[dateField];
+      else filtrosAtuais[dateField] = [val];
       atualizarTodosOsGraficos();
     });
     periodDiv.appendChild(selMes);
 
-    // 3) Select TRIMESTRAL (usa dateField e respeita filtro de ano)
+    // Select TRIMESTRE
     const selTri = document.createElement('select');
     selTri.appendChild(new Option('Todos trimestres', ''));
     const quarters = [
@@ -365,40 +376,34 @@ export function criarGrafico(
     });
     selTri.addEventListener('change', (e) => {
       const meses = e.target.selectedOptions[0].dataset.meses;
-      if (!meses) {
-        delete filtrosAtuais[dateField];
-      } else {
-        filtrosAtuais[dateField] = meses.split(',');
-      }
+      if (!meses) delete filtrosAtuais[dateField];
+      else filtrosAtuais[dateField] = meses.split(',');
       atualizarTodosOsGraficos();
     });
     periodDiv.appendChild(selTri);
 
-    // Insere os controles de período no topo
     wrapper.insertBefore(periodDiv, wrapper.firstChild);
   }
 
   //
   // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
   //
-  // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
   function renderizar() {
-    // 1) calcula a chave de filtro de duração e o handler de clique
+    // 1) monta durKey e clickHandler
     const durKey = `${parametro_busca}|${parametro_busca_fim}_duracao`;
     const clickHandler = (val) => {
-      // se for histograma de duração, usa durKey; caso contrário, usa parametro_busca
       const chaveFiltro = porDuracao ? parametro_busca : durKey;
       toggleFiltro(chaveFiltro, val);
       atualizarTodosOsGraficos();
     };
 
-    // 2) filtra os dados originais conforme filtrosAtuais
+    // 2) filtra dados
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
-    // 3) monta labels/valores conforme aggregationType
+    // 3) escolhe aggregationType
     if (aggregationType === 'count') {
-      if (porDuracao === false) {
+      if (!porDuracao) {
         if (!parametro_busca_fim) {
           throw new Error(
             'parametro_busca_fim obrigatório quando porDuracao=false',
@@ -428,22 +433,16 @@ export function criarGrafico(
       throw new Error('aggregationType deve ser "count", "sum" ou "mean"');
     }
 
-    // 4) guarda para debug
+    // 4) guarda para tabela e debug
     lastLabels = labels;
     lastValores = valores;
 
-    // 5) Atualiza ou cria o Chart.js
+    // 5) atualiza ou cria gráfico
     if (grafico) {
-      // atualização simples de dados
       grafico.data.labels = labels;
       grafico.data.datasets[0].data = valores;
       grafico.update();
-
-      // atualiza último total registrado
-      const entry = todosOsGraficos.find((g) => g.grafico === grafico);
-      if (entry) entry.ultimoTotal = dadosFiltrados.length;
     } else {
-      // configuração inicial
       const config = {
         type: tipoAtual,
         data: {
@@ -456,7 +455,6 @@ export function criarGrafico(
                 ? backgroundColor.slice(0, labels.length)
                 : backgroundColor || 'rgba(0,0,0,0.1)',
               borderWidth: 1,
-              parsing: false, // para dados do tipo {x,y,r} em bubble, se aplicável
             },
           ],
         },
@@ -482,14 +480,12 @@ export function criarGrafico(
                   }));
                 },
               },
-              // usa o clickHandler em vez de toggle direto
               onClick: function (_, item, legend) {
                 const val = legend.chart.data.labels[item.index];
                 clickHandler(val);
               },
             },
           },
-          // clique direto no elemento (barra, ponto, bolha...)
           onClick: function (e, elements) {
             if (elements.length) {
               const idx = elements[0].index;
@@ -500,7 +496,6 @@ export function criarGrafico(
         },
       };
 
-      // cria o gráfico e registra para futuras atualizações
       grafico = new Chart(ctx, config);
       grafico._parametro_busca = parametro_busca;
 
@@ -518,16 +513,17 @@ export function criarGrafico(
       });
     }
 
-    // 6) dispara callback de total/variação, se houver
+    // 6) callback
     if (typeof callback === 'function') {
       callback({ total: dadosFiltrados.length, variacaoTexto: null });
     }
   }
 
+  // renderização inicial
   renderizar();
 
   //
-  // ——— CONTROLES VISUAIS (tipo de gráfico e tabela) ———
+  // ——— CONTROLES VISUAIS ADICIONAIS ———
   //
   const controls = document.createElement('div');
   Object.assign(controls.style, {
@@ -547,9 +543,7 @@ export function criarGrafico(
     cursor: 'pointer',
   });
   tipos.forEach((t) => {
-    const o = document.createElement('option');
-    o.value = t;
-    o.text = t.charAt(0).toUpperCase() + t.slice(1);
+    const o = new Option(t.charAt(0).toUpperCase() + t.slice(1), t);
     if (t === tipoAtual) o.selected = true;
     sel.appendChild(o);
   });
@@ -559,7 +553,7 @@ export function criarGrafico(
   });
   controls.appendChild(sel);
 
-  // botão de alternar tabela
+  // botão tabela
   const btn = document.createElement('button');
   btn.textContent = 'Ver tabela';
   Object.assign(btn.style, {
@@ -572,12 +566,11 @@ export function criarGrafico(
   controls.appendChild(btn);
   wrapper.insertBefore(controls, ctx.canvas);
 
-  // container da tabela (inicialmente escondido)
+  // container da tabela
   const tableContainer = document.createElement('div');
   tableContainer.style.display = 'none';
   wrapper.appendChild(tableContainer);
 
-  // estado de visibilidade da tabela
   let tabelaVisivel = false;
   btn.addEventListener('click', () => {
     tabelaVisivel = !tabelaVisivel;
