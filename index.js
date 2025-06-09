@@ -848,11 +848,90 @@ function adicionarEstilosTabela() {
   const style = document.createElement('style');
   style.id = 'virtual-table-styles';
   style.textContent = `
-    /* Copie/adapte todo o CSS do seu script.js aqui */
-    .table-header { /* … */ }
-    .celula-clicavel { cursor: pointer; }
-    .table-info { /* … */ }
-    .pagination-controls { /* … */ }
+    /* ---- Tabela Virtualizada ---- */
+    .table-header,
+    .table-content table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(40, 50, 80, 0.03);
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+    }
+    .table-header th, .table-content th {
+      background: #f7fafd;
+      color: #183153;
+      font-weight: 600;
+      padding: 14px 10px;
+      border-bottom: 1px solid #e3e9f5;
+      text-align: left;
+      font-size: 1rem;
+    }
+    .table-content td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #f1f2fa;
+      font-size: 0.98rem;
+      color: #444;
+      background: #fff;
+      transition: background 0.2s;
+    }
+    .table-content tr:nth-child(even) td {
+      background: #f7fafd;
+    }
+    .table-content tr:hover td {
+      background: #e7f0fa !important;
+    }
+    .celula-clicavel {
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+    .celula-clicavel:hover {
+      background: #e6f7ff !important;
+      box-shadow: 0 0 2px #50a7e6;
+    }
+    .table-info {
+      font-size: 0.97rem;
+      color: #555;
+      padding: 6px 0 10px 0;
+    }
+    .pagination-controls {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 4px;
+      margin: 14px 0 4px 0;
+    }
+    .pagination-controls button {
+      min-width: 32px;
+      height: 32px;
+      background: #f7fafd;
+      border: 1px solid #dde7f7;
+      color: #2877c5;
+      font-weight: 600;
+      font-size: 1rem;
+      border-radius: 6px;
+      margin: 0 2px;
+      cursor: pointer;
+      transition: background 0.2s, border 0.2s;
+    }
+    .pagination-controls button:disabled {
+      background: #2877c5;
+      color: #fff;
+      border-color: #2877c5;
+      cursor: default;
+      font-weight: bold;
+    }
+    @media (max-width: 650px) {
+      .table-header th, .table-content td {
+        font-size: 0.88rem;
+        padding: 8px 6px;
+      }
+      .pagination-controls button {
+        min-width: 24px;
+        height: 28px;
+        font-size: 0.92rem;
+      }
+    }
   `;
   document.head.appendChild(style);
 }
