@@ -1006,13 +1006,15 @@ function calcularEstatisticasGrafico(dados, categoryField) {
 }
 
 /**
- * Cria um gráfico de bolhas que reage aos filtros aplicados.
- * @param {HTMLElement} ctx - Contexto do canvas onde o gráfico será renderizado.
- * @param {string} eixoX - Campo do eixo X.
- * @param {string} eixoY - Campo do eixo Y.
- * @param {string} raio - Campo que define o tamanho das bolhas.
- * @param {Array} dadosOriginais - Dados de entrada para o gráfico.
+ * Cria um gráfico de bolhas com agregação (count, sum, mean).
+ * @param {HTMLElement} ctx - Contexto do canvas.
+ * @param {string} eixoX - Campo eixo X (agrupador).
+ * @param {string} eixoY - Campo eixo Y (agrupador).
+ * @param {string} raio - Campo do tamanho da bolha (agrupador ou numérico).
+ * @param {Array} dadosOriginais - Dados de entrada.
  * @param {Array<string>} cores - Array de cores para as bolhas.
+ * @param {string} aggregationType - "count" (padrão), "sum" ou "mean"
+ * @param {string} valueField - Campo numérico a ser somado ou mediado (para sum/mean)
  */
 export function criarGraficoBolha(
   ctx,
@@ -1021,71 +1023,109 @@ export function criarGraficoBolha(
   raio,
   dadosOriginais,
   cores,
+  aggregationType = 'count',
+  valueField = null,
 ) {
-  const dadosOriginaisCopy = [...dadosOriginais]; // Mantém os dados originais imutáveis
+  const dadosOriginaisCopy = [...dadosOriginais];
   let grafico;
 
-  // Converte strings para números com base na contagem de ocorrências
-  function converterParaNumeros(dados, campo) {
-    const contagem = {};
-    let contador = 1;
-
+  function agruparDados(dados) {
+    // Mapeia cada combinação única de X/Y/R para suas agregações
+    const grupoMap = new Map();
     dados.forEach((item) => {
-      const valor = item[campo];
-      if (!(valor in contagem)) {
-        contagem[valor] = contador++;
+      // Chave é uma string do tipo "x|y|r"
+      const chave =
+        String(item[eixoX]) +
+        '|' +
+        String(item[eixoY]) +
+        '|' +
+        String(item[raio]);
+      const valNum =
+        aggregationType === 'count'
+          ? 1
+          : parseFloat(valueField ? item[valueField] : item[raio]);
+      if (!grupoMap.has(chave)) {
+        grupoMap.set(chave, {
+          x: item[eixoX],
+          y: item[eixoY],
+          r: item[raio],
+          count: 0,
+          sum: 0,
+        });
       }
+      const obj = grupoMap.get(chave);
+      obj.count += 1;
+      obj.sum += isNaN(valNum) ? 0 : valNum;
     });
 
-    return (valor) => contagem[valor] || 0;
+    // Gera o array final para o gráfico de bolhas
+    const result = [];
+    for (const [_, v] of grupoMap) {
+      result.push({
+        x: isNaN(parseFloat(v.x)) ? v.x : parseFloat(v.x),
+        y: isNaN(parseFloat(v.y)) ? v.y : parseFloat(v.y),
+        r:
+          aggregationType === 'count'
+            ? v.count * 6 // multiplica para ficar visual (ajuste se quiser)
+            : aggregationType === 'sum'
+            ? v.sum
+            : v.count > 0
+            ? v.sum / v.count
+            : 0,
+        // cor será atribuída depois
+      });
+    }
+    return result;
+  }
+
+  // Conversor para valores numéricos (para string-categoria)
+  function converterParaNumeros(array, campo) {
+    const mapa = {};
+    let idx = 1;
+    array.forEach((item) => {
+      if (!(item[campo] in mapa)) mapa[item[campo]] = idx++;
+    });
+    return (v) => mapa[v] || 0;
   }
 
   function renderizarBolhas() {
     const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
+    let dadosGrafico = agruparDados(dadosFiltrados);
 
-    // Verifica se os campos são strings e os converte se necessário
-    const isXString = dadosFiltrados.some((item) =>
-      isNaN(parseFloat(item[eixoX])),
-    );
-    const isYString = dadosFiltrados.some((item) =>
-      isNaN(parseFloat(item[eixoY])),
-    );
-    const isRaioString = dadosFiltrados.some((item) =>
-      isNaN(parseFloat(item[raio])),
-    );
+    // Detecta se precisa converter algum eixo para número
+    const xIsString = dadosGrafico.some((d) => isNaN(d.x));
+    const yIsString = dadosGrafico.some((d) => isNaN(d.y));
+    const rIsString = dadosGrafico.some((d) => isNaN(d.r));
 
-    const xConverter = isXString
-      ? converterParaNumeros(dadosFiltrados, eixoX)
-      : (v) => parseFloat(v) || 0;
-    const yConverter = isYString
-      ? converterParaNumeros(dadosFiltrados, eixoY)
-      : (v) => parseFloat(v) || 0;
-    const raioConverter = isRaioString
-      ? converterParaNumeros(dadosFiltrados, raio)
-      : (v) => parseFloat(v) || 5;
+    let xConverter, yConverter, rConverter;
+    if (xIsString) xConverter = converterParaNumeros(dadosGrafico, 'x');
+    if (yIsString) yConverter = converterParaNumeros(dadosGrafico, 'y');
+    if (rIsString) rConverter = converterParaNumeros(dadosGrafico, 'r');
 
-    // Processa os dados para criar os pontos do gráfico
-    const dadosGrafico = dadosFiltrados.map((item, index) => ({
-      x: xConverter(item[eixoX]),
-      y: yConverter(item[eixoY]),
-      r: raioConverter(item[raio]),
-      backgroundColor: cores[index % cores.length], // Cicla pelas cores fornecidas
+    dadosGrafico = dadosGrafico.map((d, i) => ({
+      x: xIsString ? xConverter(d.x) : d.x,
+      y: yIsString ? yConverter(d.y) : d.y,
+      r: rIsString ? rConverter(d.r) : d.r,
+      backgroundColor: cores[i % cores.length],
+      label: `${d.x} | ${d.y} | ${d.r}`,
     }));
 
     if (grafico) {
-      // Atualiza o gráfico existente
       grafico.data.datasets[0].data = dadosGrafico;
+      grafico.data.datasets[0].backgroundColor = dadosGrafico.map(
+        (d) => d.backgroundColor,
+      );
       grafico.update();
     } else {
-      // Configuração inicial do gráfico de bolhas
       const config = {
         type: 'bubble',
         data: {
           datasets: [
             {
-              label: `Gráfico de Bolhas (${eixoX}, ${eixoY}, ${raio})`,
+              label: `Bolha (${eixoX}, ${eixoY}, ${raio}) [${aggregationType}]`,
               data: dadosGrafico,
               backgroundColor: dadosGrafico.map((d) => d.backgroundColor),
+              parsing: false, // Para usar {x, y, r}
             },
           ],
         },
@@ -1093,35 +1133,39 @@ export function criarGraficoBolha(
           responsive: true,
           scales: {
             x: {
-              title: {
-                display: true,
-                text: eixoX,
-              },
+              title: { display: true, text: eixoX },
               beginAtZero: true,
             },
             y: {
-              title: {
-                display: true,
-                text: eixoY,
-              },
+              title: { display: true, text: eixoY },
               beginAtZero: true,
+            },
+          },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function (context) {
+                  const d = context.raw;
+                  return (
+                    `${eixoX}: ${d.x}, ` +
+                    `${eixoY}: ${d.y}, ` +
+                    `${raio}: ${d.r.toFixed(2)}`
+                  );
+                },
+              },
             },
           },
         },
       };
-
-      // Cria o gráfico
       grafico = new Chart(ctx, config);
     }
   }
 
-  // Renderiza pela primeira vez
   renderizarBolhas();
 
-  // Registra o gráfico para reagir a atualizações globais
   todosOsGraficos.push({
     grafico,
-    renderizar: renderizarBolhas, // Define o método de renderização para atualizações
+    renderizar: renderizarBolhas,
   });
 }
 
@@ -1567,4 +1611,12 @@ export function criarIcone(chartContainer) {
   } catch (err) {
     console.error('criarIcone falhou:', err);
   }
+}
+
+function gerarCores(categorias) {
+  return categorias.map(
+    (_, i) =>
+      // cria tons equidistantes no círculo de matiz
+      `hsl(${(i * 360) / categorias.length}, 70%, 50%)`,
+  );
 }
