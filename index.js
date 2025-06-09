@@ -1006,487 +1006,6 @@ function calcularEstatisticasGrafico(dados, categoryField) {
 }
 
 /**
-<<<<<<< HEAD
- * Gera um relatório PDF com verificações robustas para evitar erros
- */
-
-async function gerarRelatorio(dadosOriginais) {
-  showLoadingSpinner();
-  try {
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    let cursorY = 40;
-
-    // --- Cabeçalho ---
-    doc.setFontSize(18);
-    doc.text('Relatório de Projeções e Resultados', 40, cursorY);
-    cursorY += 25;
-    doc.setDrawColor(0, 0, 0);
-    doc.line(40, cursorY, 555, cursorY);
-    cursorY += 20;
-    doc.setFontSize(11);
-    doc.text(
-      'Este relatório apresenta os resultados atuais e as projeções baseadas nos dados.',
-      40,
-      cursorY,
-    );
-    cursorY += 30;
-
-    // Verificações de segurança para todosOsGraficos
-    if (
-      !todosOsGraficos ||
-      !Array.isArray(todosOsGraficos) ||
-      todosOsGraficos.length === 0
-    ) {
-      doc.text(
-        'Não há gráficos disponíveis para inclusão no relatório.',
-        40,
-        cursorY,
-      );
-      doc.save('Relatorio_Visual_Sem_Graficos.pdf');
-      return;
-    }
-
-    const entries = todosOsGraficos.filter(
-      (entry) =>
-        entry && entry.grafico && entry.dadosOriginais && entry.parametro_busca,
-    );
-
-    if (entries.length === 0) {
-      doc.text(
-        'Não foram encontrados gráficos válidos para o relatório.',
-        40,
-        cursorY,
-      );
-      doc.save('Relatorio_Visual_Sem_Graficos.pdf');
-      return;
-    }
-
-    const total = entries.length;
-    let tarefas = [];
-
-    // Prepara as imagens e estatísticas com validação
-    for (const entry of entries) {
-      try {
-        if (
-          !entry.grafico ||
-          typeof entry.grafico.toBase64Image !== 'function'
-        ) {
-          continue;
-        }
-
-        const imgData = entry.grafico.toBase64Image();
-        const imgW = 515;
-        const imgH = (entry.grafico.height / entry.grafico.width) * imgW;
-
-        const stats = calcularEstatisticasGrafico(
-          entry.dadosOriginais || [],
-          entry.parametro_busca || '',
-        );
-
-        tarefas.push({ grafico: entry.grafico, imgData, imgW, imgH, stats });
-      } catch (err) {
-        console.error('Erro ao processar gráfico:', err);
-        // Continuamos com os outros gráficos em caso de erro
-      }
-    }
-
-    // Se depois da validação não sobrar nenhum gráfico válido
-    if (tarefas.length === 0) {
-      doc.text(
-        'Os gráficos disponíveis não puderam ser processados corretamente.',
-        40,
-        cursorY,
-      );
-      doc.save('Relatorio_Visual_Sem_Dados.pdf');
-      return;
-    }
-
-    for (let i = 0; i < tarefas.length; i++) {
-      const { grafico, imgData, imgW, imgH, stats } = tarefas[i];
-
-      // Validação de segurança para grafico
-      if (
-        !grafico ||
-        !grafico.data ||
-        !grafico.data.labels ||
-        !grafico.data.datasets ||
-        !grafico.data.datasets[0] ||
-        !grafico.data.datasets[0].data
-      ) {
-        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
-        continue;
-      }
-
-      // paginação
-      if (cursorY + imgH > 780) {
-        doc.addPage();
-        cursorY = 40;
-      }
-
-      // gráfico
-      try {
-        doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
-        cursorY += imgH + 10;
-      } catch (err) {
-        console.error('Erro ao adicionar imagem:', err);
-        doc.text('Erro ao gerar imagem do gráfico', 40, cursorY);
-        cursorY += 20;
-      }
-
-      // tabela de valores
-      const labels = grafico.data.labels || [];
-      const valores = grafico.data.datasets[0].data || [];
-      doc.setFontSize(11);
-      labels.forEach((lab, j) => {
-        if (cursorY > 780) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.text(`${lab}: ${valores[j]} atendimentos`, 40, cursorY);
-        cursorY += 14;
-      });
-      cursorY += 10;
-
-      const labelGraf = grafico.data.datasets[0].label || '';
-      if (labelGraf === 'SLA') {
-        // SLA ano-a-ano por bin
-        if (
-          stats &&
-          stats.statsPorCategoria &&
-          Array.isArray(stats.statsPorCategoria)
-        ) {
-          doc.setFontSize(12);
-          doc.text('SLA – Variação Ano a Ano por Faixa de Tempo:', 40, cursorY);
-          cursorY += 18;
-
-          stats.statsPorCategoria.forEach((bin) => {
-            if (!bin || typeof bin.categoria !== 'string') return;
-
-            if (cursorY > 780) {
-              doc.addPage();
-              cursorY = 40;
-            }
-
-            // Extrai o trecho com validação
-            let trecho = '';
-            const match = bin.categoria.match(/> *([^<]+)/);
-            if (match && match[1]) {
-              trecho = match[1];
-            } else {
-              trecho = bin.categoria;
-            }
-
-            doc.setFontSize(11);
-            doc.text(
-              `> ${trecho.trim()}: ${bin.variacaoAno.toFixed(2)}%`,
-              60,
-              cursorY,
-            );
-            cursorY += 14;
-          });
-          cursorY += 20;
-        }
-
-        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
-        continue;
-      }
-
-      // Verificações para estatísticas
-      if (
-        !stats ||
-        !stats.statsPorCategoria ||
-        !Array.isArray(stats.statsPorCategoria)
-      ) {
-        updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
-        continue;
-      }
-
-      // bloco: variação ano-a-ano total
-      if (stats.anoAnterior && stats.anoRecente) {
-        if (cursorY > 760) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(12);
-        doc.text(
-          `Variação Ano a Ano (${stats.anoAnterior} → ${stats.anoRecente}):`,
-          40,
-          cursorY,
-        );
-        cursorY += 18;
-
-        stats.statsPorCategoria.forEach((cat) => {
-          if (!cat || typeof cat.categoria !== 'string') return;
-
-          if (cursorY > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          doc.setFontSize(11);
-          doc.text(
-            `${cat.categoria}: ${cat.variacaoAno.toFixed(2)}%`,
-            60,
-            cursorY,
-          );
-          cursorY += 14;
-        });
-        cursorY += 20;
-
-        // bloco: variação mês-a-mês ano-a-ano
-        if (cursorY > 760) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(12);
-        doc.text(
-          `Variação Mês a Mês (${stats.anoAnterior} → ${stats.anoRecente}):`,
-          40,
-          cursorY,
-        );
-        cursorY += 18;
-
-        stats.statsPorCategoria.forEach((cat) => {
-          if (!cat || !cat.variacaoMeses || !Array.isArray(cat.variacaoMeses))
-            return;
-
-          if (cursorY > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          doc.setFontSize(11);
-          doc.text(`Categoria ${cat.categoria}:`, 60, cursorY);
-          cursorY += 14;
-
-          cat.variacaoMeses.forEach((m) => {
-            if (!m || typeof m.mes !== 'string') return;
-
-            if (cursorY > 780) {
-              doc.addPage();
-              cursorY = 40;
-            }
-            doc.text(`   ${m.mes}: ${m.variacao.toFixed(2)}%`, 80, cursorY);
-            cursorY += 14;
-          });
-          cursorY += 10;
-        });
-        cursorY += 20;
-
-        // bloco: variação mês-a-mês (relativo ao mês anterior)
-        if (cursorY > 760) {
-          doc.addPage();
-          cursorY = 40;
-        }
-        doc.setFontSize(12);
-        doc.text(
-          `Variação em Relação ao Mês Anterior (${stats.anoRecente}):`,
-          40,
-          cursorY,
-        );
-        cursorY += 18;
-
-        stats.statsPorCategoria.forEach((cat) => {
-          if (!cat || !cat.variacaoMensal || !Array.isArray(cat.variacaoMensal))
-            return;
-
-          if (cursorY > 780) {
-            doc.addPage();
-            cursorY = 40;
-          }
-          doc.setFontSize(11);
-          doc.text(`Categoria ${cat.categoria}:`, 60, cursorY);
-          cursorY += 14;
-
-          cat.variacaoMensal.forEach((m) => {
-            if (!m || typeof m.mes !== 'string') return;
-
-            if (cursorY > 780) {
-              doc.addPage();
-              cursorY = 40;
-            }
-            doc.text(`   ${m.mes}: ${m.variacao.toFixed(2)}%`, 80, cursorY);
-            cursorY += 14;
-          });
-          cursorY += 10;
-        });
-        cursorY += 20;
-      }
-
-      updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
-    }
-
-    doc.save('Relatorio_Visual_Completo.pdf');
-  } catch (error) {
-    console.error('Erro ao gerar relatório:', error);
-    // Mostra mensagem de erro na página
-    const errorDiv = document.createElement('div');
-    errorDiv.style.color = 'red';
-    errorDiv.style.padding = '10px';
-    errorDiv.style.margin = '10px 0';
-    errorDiv.style.border = '1px solid red';
-    errorDiv.textContent = `Erro ao gerar relatório: ${error.message}. Tente novamente mais tarde.`;
-    document.body.appendChild(errorDiv);
-
-    // Remove após 10 segundos
-    setTimeout(() => {
-      if (errorDiv.parentNode) {
-        errorDiv.parentNode.removeChild(errorDiv);
-      }
-    }, 10000);
-  } finally {
-    hideLoadingSpinner();
-  }
-}
-
-/**
- * Gráfico de bolhas com agregações
- *  'raw'  | 'count' | 'sum' | 'mean'
- *
- * Agora o raio é **normalizado** para um intervalo visual
- * confortável (5 px → 40 px) – nada de bolhas gigantes.
- *
- * @param {CanvasRenderingContext2D} ctx
- * @param {Array<Object>}            dadosOriginais
- * @param {string}                   eixoX
- * @param {string}                   eixoY
- * @param {string}                   raio         – campo-fonte quando aggregationType='raw'
- * @param {string}                   corField
- * @param {string}   [aggregationType='raw']      – 'raw' | 'count' | 'sum' | 'mean'
- * @param {string}   [valueField=null]            – campo numérico p/ sum/mean
- */
-export function criarGraficoBolha(
-  ctx,
-  dadosOriginais,
-  eixoX,
-  eixoY,
-  raio,
-  corField,
-  aggregationType = 'raw',
-  valueField = null,
-) {
-  const dadosCopy = Array.isArray(dadosOriginais)
-    ? [...dadosOriginais]
-    : dadosOriginais.slice();
-  let grafico;
-
-  // ————————————————— helpers ——————————————————
-  const convBuilder = (dados, campo) => {
-    const map = {};
-    let i = 1;
-    dados.forEach((d) => (map[d[campo]] ??= i++));
-    return (v) => (isNaN(+v) ? map[v] || 0 : +v);
-  };
-
-  function renderizar() {
-    const filtrados = getDadosAtuais(dadosCopy);
-
-    // Conversores string→número, se necessário
-    const xConv = filtrados.some((d) => isNaN(+d[eixoX]))
-      ? convBuilder(filtrados, eixoX)
-      : (v) => +v || 0;
-    const yConv = filtrados.some((d) => isNaN(+d[eixoY]))
-      ? convBuilder(filtrados, eixoY)
-      : (v) => +v || 0;
-
-    // ————————— AGRUPAMENTO ————————————————
-    const grupos = new Map(); // key → {x,y,count,sum,cor}
-    filtrados.forEach((d) => {
-      const key = `${d[eixoX]}||${d[eixoY]}||${d[corField]}`;
-      if (!grupos.has(key)) {
-        grupos.set(key, {
-          x: xConv(d[eixoX]),
-          y: yConv(d[eixoY]),
-          count: 0,
-          sum: 0,
-          cor: d[corField],
-        });
-      }
-      const g = grupos.get(key);
-      g.count += 1;
-      g.sum += parseFloat(valueField ? d[valueField] : d[raio]) || 0;
-    });
-
-    // ————————— NORMALIZAÇÃO DO RAIO —————————
-    const pontos = [];
-    const rBrutos = [];
-
-    grupos.forEach((g) => {
-      let r;
-      switch (aggregationType) {
-        case 'count':
-          r = g.count;
-          break;
-        case 'sum':
-          r = g.sum;
-          break;
-        case 'mean':
-          r = g.sum / g.count;
-          break;
-        default:
-          r = g.sum; // 'raw'
-      }
-      rBrutos.push(r);
-      pontos.push({ x: g.x, y: g.y, r: 0, _cor: g.cor, _valor: r });
-    });
-
-    const minVal = Math.min(...rBrutos);
-    const maxVal = Math.max(...rBrutos);
-    const minPx = 5; // raio mínimo
-    const maxPx = 40; // raio máximo
-    const useSqrt = true;
-
-    rBrutos.forEach((v, i) => {
-      let t = (v - minVal) / (maxVal - minVal || 1); // 0-1
-      if (useSqrt) t = Math.sqrt(t); // √-compressão
-      pontos[i].r = minPx + t * (maxPx - minPx);
-    });
-
-    // ————————— CORES ————————————————
-    const categorias = [...new Set(pontos.map((p) => p._cor))];
-    const colorMap = {};
-    categorias.forEach((c, i) => {
-      const h = Math.round((i / categorias.length) * 360);
-      colorMap[c] = `hsl(${h},65%,50%)`;
-    });
-    const colors = pontos.map((p) => colorMap[p._cor]);
-
-    // ————————— CHART.JS ——————————————
-    if (grafico) {
-      grafico.data.datasets[0].data = pontos;
-      grafico.data.datasets[0].backgroundColor = colors;
-      grafico.update();
-    } else {
-      grafico = new Chart(ctx, {
-        type: 'bubble',
-        data: { datasets: [{ data: pontos, backgroundColor: colors }] },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label({ raw }) {
-                  return [
-                    `${eixoX}: ${raw.x}`,
-                    `${eixoY}: ${raw.y}`,
-                    `valor: ${raw._valor}`, // valor antes da escala
-                    `${corField}: ${raw._cor}`,
-                  ];
-                },
-              },
-            },
-          },
-          scales: {
-            x: { title: { display: true, text: eixoX }, beginAtZero: true },
-            y: { title: { display: true, text: eixoY }, beginAtZero: true },
-          },
-        },
-      });
-      todosOsGraficos.push({ grafico, renderizar });
-    }
-  }
-
-  renderizar();
-=======
  * Cria um gráfico de bolhas que reage aos filtros aplicados.
  * @param {HTMLElement} ctx - Contexto do canvas onde o gráfico será renderizado.
  * @param {string} eixoX - Campo do eixo X.
@@ -1585,7 +1104,6 @@ export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores
     grafico,
     renderizar: renderizarBolhas, // Define o método de renderização para atualizações
   });
->>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
 }
 
 /**
@@ -1596,71 +1114,6 @@ export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores
  * @param {Array<Object>} obj - Array de dados originais.
  * @param {string} titulo - Título do gráfico.
  */
-<<<<<<< HEAD
-export function criarGraficoMisto(ctx, obj, titulo = '') {
-  const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
-  let grafico;
-
-  function obterMesAno(dataStr) {
-    const data = new Date(dataStr);
-    if (isNaN(data)) return null;
-    return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(
-      2,
-      '0',
-    )}`; // Ex: "2023-01"
-  }
-
-  function renderizar() {
-    const dadosFiltrados = getDadosAtuais(dadosOriginais);
-
-    const contagemAtendimentosMensal = {};
-    const contagemExcelentesMensal = {};
-
-    dadosFiltrados.forEach((item) => {
-      const dataResolucao = new Date(item.data_resolucao);
-      if (isNaN(dataResolucao.getTime())) {
-        return;
-      }
-
-      const mesIndex = dataResolucao.getMonth();
-      const nomeMes = ordemMeses[mesIndex];
-
-      if (!contagemAtendimentosMensal[nomeMes]) {
-        contagemAtendimentosMensal[nomeMes] = 0;
-      }
-      if (!contagemExcelentesMensal[nomeMes]) {
-        contagemExcelentesMensal[nomeMes] = 0;
-      }
-
-      contagemAtendimentosMensal[nomeMes]++;
-
-      if (item.nota === 'Excelente') {
-        contagemExcelentesMensal[nomeMes]++;
-      }
-    });
-
-    const labels = ordemMeses;
-    const dadosBarra = labels.map(
-      (mes) => contagemAtendimentosMensal[mes] || 0,
-    );
-    const dadosLinha = labels.map((mes) => contagemExcelentesMensal[mes] || 0);
-
-    // Definir as cores das barras com transparência (RGBA)
-    const barColors = [
-      'rgba(255, 99, 132, 0.7)', // Vermelho com 70% de opacidade
-      'rgba(153, 102, 255, 0.7)', // Roxo com 70% de opacidade (exemplo de RGB para roxo)
-      'rgba(54, 162, 235, 0.7)', // Azul com 70% de opacidade
-      'rgba(255, 205, 86, 0.7)', // Amarelo com 70% de opacidade
-      'rgba(139, 69, 19, 0.7)', // Marrom com 70% de opacidade (exemplo de RGB para marrom)
-      'rgba(75, 192, 192, 0.7)', // Verde com 70% de opacidade
-      'rgba(255, 99, 132, 0.7)', // Repete Vermelho
-      'rgba(153, 102, 255, 0.7)', // Repete Roxo
-      'rgba(54, 162, 235, 0.7)', // Repete Azul
-      'rgba(255, 205, 86, 0.7)', // Repete Amarelo
-      'rgba(139, 69, 19, 0.7)', // Repete Marrom
-      'rgba(75, 192, 192, 0.7)', // Repete Verde
-    ];
-=======
 export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   let grafico;
@@ -1685,7 +1138,6 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
     const labels = Object.keys(agrupado);
     const soma = labels.map((l) => agrupado[l].soma);
     const media = labels.map((l) => agrupado[l].soma / agrupado[l].count);
->>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
 
     if (grafico) {
       grafico.destroy();
@@ -1694,30 +1146,6 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
     grafico = new Chart(ctx, {
       type: 'bar',
       data: {
-<<<<<<< HEAD
-        labels: labels,
-        datasets: [
-          {
-            // Dataset de barras (definido primeiro)
-            type: 'bar',
-            label: 'Total de atendimentos',
-            data: dadosBarra,
-            backgroundColor: barColors, // Usar cores RGBA transparentes
-            borderColor: barColors.map((color) => color.replace('0.7', '1')), // Borda opaca (opcional)
-            borderWidth: 1,
-          },
-          {
-            // Dataset de linha (definido depois, será renderizado por cima)
-            type: 'line',
-            label: 'Notas "Excelente"',
-            data: dadosLinha,
-            borderColor: 'rgba(255, 99, 132, 1)', // Cor da linha opaca
-            backgroundColor: 'rgba(255, 99, 132, 0.3)', // Área abaixo da linha (opcionalmente transparente)
-            borderWidth: 2,
-            tension: 0.3,
-            fill: false,
-            yAxisID: 'y',
-=======
         labels,
         datasets: [
           {
@@ -1737,7 +1165,6 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
             borderWidth: 2,
             tension: 0.3,
             fill: false,
->>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
           },
         ],
       },
@@ -1753,31 +1180,21 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
           },
         },
         scales: {
-<<<<<<< HEAD
           x: {
             // Configurações do eixo X
           },
-=======
->>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
           y: {
             beginAtZero: true,
           },
         },
       },
     });
-<<<<<<< HEAD
-  } // Primeiro render
-
-  renderizar(); // Registra para reagir a filtros globais (se aplicável)
-
-=======
   }
 
   // Primeiro render
   renderizar();
 
   // Registra para reagir aos filtros globais
->>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
   todosOsGraficos.push({
     grafico,
     dadosOriginais,
@@ -1785,291 +1202,350 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
   });
 }
 
-<<<<<<< HEAD
 /**
  * Cria o ícone flutuante, janela de configuração e gráficos dinâmicos.
  * O parâmetro chartContainer indica onde os gráficos serão renderizados.
  */
+/**
+ * Adiciona um widget flutuante para criar gráficos dinâmicos a partir de JSON/endpoint.
+ *
+ * @param {HTMLElement} chartContainer Elemento que receberá os gráficos gerados.
+ */
+
 export function criarIcone(chartContainer) {
-  console.log('[criarIcone] iniciado. chartContainer:', chartContainer);
+  try {
+    // 1) Validação de container
+    if (!(chartContainer instanceof HTMLElement)) {
+      console.error('criarIcone: chartContainer inválido', chartContainer);
+      alert('Você precisa passar um elemento válido como chartContainer.');
+      return;
+    }
 
-  if (!(chartContainer instanceof HTMLElement)) {
-    console.error('[criarIcone] ERRO: chartContainer inválido.');
-    alert('Você precisa passar uma div ou container válido.');
-    return;
-  }
+    // 2) Injeta CSS global (apenas uma vez)
+    if (!document.getElementById('widget-global-styles')) {
+      const style = document.createElement('style');
+      style.id = 'widget-global-styles';
+      style.textContent = `
+        /* --- Botão flutuante --- */
+        .widget-icon {
+          position: fixed; width: 60px; height: 60px;
+          bottom: 20px; right: 20px;
+          background: #007bff; color: #fff;
+          border: none; border-radius: 50%;
+          font-weight: bold; font-size: 16px;
+          cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          z-index: 10000;
+        }
+        /* --- Janela de configuração --- */
+        .widget-window {
+          position: fixed; width: 320px; padding: 10px;
+          background: #fff; border: 1px solid #ccc; border-radius: 8px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+          z-index: 10000; transition: opacity 0.2s ease;
+        }
+        .widget-window.hidden { display: none; }
 
-  function loadChartJS() {
-    return new Promise((resolve, reject) => {
-      if (window.Chart) return resolve();
-      const script = document.createElement('script');
-      script.src =
-        'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js';
-      script.onload = () => {
-        console.log('[criarIcone] Chart.js carregado com sucesso');
-        resolve();
-      };
-      script.onerror = () => {
-        console.error('[criarIcone] Falha ao carregar Chart.js');
-        reject(new Error('Erro ao carregar Chart.js'));
-      };
-      document.head.appendChild(script);
-    });
-  }
+        /* --- Wrapper do gráfico --- */
+        .chart-wrapper {
+          position: absolute;
+        }
+        .chart-wrapper.selected {
+          border: 2px dashed #007bff;
+        }
 
-  // ==== Ícone flutuante ====
-  const widgetIcon = document.createElement('button');
-  widgetIcon.id = 'floatingWidgetIcon';
-  widgetIcon.textContent = 'ITP';
-  Object.assign(widgetIcon.style, {
-    position: 'fixed',
-    width: '60px',
-    height: '60px',
-    background: '#007bff',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '50%',
-    fontWeight: 'bold',
-    fontSize: '16px',
-    cursor: 'pointer',
-    zIndex: '10000',
-    bottom: '20px',
-    right: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-    userSelect: 'none',
-  });
-  document.body.appendChild(widgetIcon);
+        /* --- Handle de resize --- */
+        .resize-handle {
+          position: absolute;
+          width: 12px; height: 12px;
+          background: #007bff;
+          bottom: 4px; right: 4px;
+          cursor: se-resize;
+          display: none;
+        }
+        .chart-wrapper.selected .resize-handle {
+          display: block;
+        }
+      `;
+      document.head.appendChild(style);
+    }
 
-  // ==== Janela de configuração ====
-  const widgetWindow = document.createElement('div');
-  Object.assign(widgetWindow.style, {
-    position: 'fixed',
-    width: '320px',
-    padding: '10px',
-    background: '#fff',
-    border: '1px solid #ccc',
-    borderRadius: '8px',
-    boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-    zIndex: '10000',
-    display: 'none',
-  });
-  document.body.appendChild(widgetWindow);
+    // 3) Cria o ícone flutuante
+    const widgetIcon = document.createElement('button');
+    widgetIcon.id = 'floatingWidgetIcon';
+    widgetIcon.className = 'widget-icon';
+    widgetIcon.textContent = 'ITP';
+    document.body.appendChild(widgetIcon);
 
-  // ==== Drag and Drop ====
-  let isDragging = false,
-    justDragged = false,
-    startX = 0,
-    startY = 0,
-    offsetX = 0,
-    offsetY = 0;
-  const DRAG_THRESHOLD = 5;
+    // 4) Cria a janela de configuração
+    const widgetWindow = document.createElement('div');
+    widgetWindow.id = 'floatingWidgetWindow';
+    widgetWindow.className = 'widget-window hidden';
+    document.body.appendChild(widgetWindow);
 
-  widgetIcon.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    justDragged = false;
-    startX = e.clientX;
-    startY = e.clientY;
-    widgetIcon.style.right = 'auto';
-    widgetIcon.style.bottom = 'auto';
-    const rect = widgetIcon.getBoundingClientRect();
-    offsetX = startX - rect.left;
-    offsetY = startY - rect.top;
-    document.addEventListener('mousemove', onMouseMove);
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (!isDragging) return;
-    document.removeEventListener('mousemove', onMouseMove);
-    isDragging = false;
-    if (justDragged) {
+    // 5) Lógica de arrastar o ícone
+    let isDraggingIcon = false,
+      iconOffsetX = 0,
+      iconOffsetY = 0;
+    widgetIcon.addEventListener('mousedown', (e) => {
+      isDraggingIcon = true;
       const rect = widgetIcon.getBoundingClientRect();
-      const distances = {
-        esquerda: rect.left,
-        direita: window.innerWidth - rect.right,
-        topo: rect.top,
-        base: window.innerHeight - rect.bottom,
+      iconOffsetX = e.clientX - rect.left;
+      iconOffsetY = e.clientY - rect.top;
+      document.addEventListener('mousemove', onDragIcon);
+      document.addEventListener(
+        'mouseup',
+        () => {
+          isDraggingIcon = false;
+          document.removeEventListener('mousemove', onDragIcon);
+        },
+        { once: true },
+      );
+    });
+    function onDragIcon(e) {
+      if (!isDraggingIcon) return;
+      const x = Math.min(
+        Math.max(e.clientX - iconOffsetX, 0),
+        window.innerWidth - widgetIcon.offsetWidth,
+      );
+      const y = Math.min(
+        Math.max(e.clientY - iconOffsetY, 0),
+        window.innerHeight - widgetIcon.offsetHeight,
+      );
+      widgetIcon.style.left = `${x}px`;
+      widgetIcon.style.top = `${y}px`;
+    }
+
+    // 6) Toggle da janela ao clicar no ícone
+    widgetIcon.addEventListener('click', () => {
+      widgetWindow.classList.toggle('hidden');
+      if (!widgetWindow.classList.contains('hidden')) {
+        const rect = widgetIcon.getBoundingClientRect();
+        widgetWindow.style.top = `${rect.bottom + 5}px`;
+        widgetWindow.style.left = `${rect.left}px`;
+        renderWidgetContent();
+      }
+    });
+
+    // 7) Estado interno para os dados
+    let latestData = null;
+
+    // 8) Monta o HTML interno da janela e associa eventos
+    function renderWidgetContent() {
+      widgetWindow.innerHTML = `
+        <div><label>Endpoint:</label><input id="widgetEndpoint" style="width:100%"/></div>
+        <div><label>Arquivo JSON:</label><input id="widgetJsonFile" type="file" accept=".json"/></div>
+        <button id="widgetFetchBtn">Requisição</button>
+        <div id="widgetResponseProps"></div>
+        <div id="widgetPropSelection" style="display:none; margin-top:8px;">
+          <label>Propriedade:</label>
+          <select id="widgetPropSelect"></select>
+          <label>Tipo:</label>
+          <select id="widgetChartType">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="pie">Pie</option>
+            <option value="doughnut">Doughnut</option>
+          </select>
+          <button id="widgetCreateChartBtn">Criar Gráfico</button>
+        </div>
+        <button id="widgetClearCharts" style="background:#dc3545;color:#fff; margin-top:8px;">Limpar Gráficos</button>
+      `;
+      document.getElementById('widgetFetchBtn').onclick = handleFetch;
+      document.getElementById('widgetJsonFile').onchange = handleFile;
+      document.getElementById('widgetCreateChartBtn').onclick = () =>
+        createChartForProp(document.getElementById('widgetPropSelect').value);
+      document.getElementById('widgetClearCharts').onclick = () => {
+        chartContainer.innerHTML = '';
       };
-      const nearest = Object.entries(distances).sort(
-        (a, b) => a[1] - b[1],
-      )[0][0];
-      switch (nearest) {
-        case 'esquerda':
-          widgetIcon.style.left = '20px';
-          break;
-        case 'direita':
-          widgetIcon.style.left = `${
-            window.innerWidth - widgetIcon.offsetWidth - 20
-          }px`;
-          break;
-        case 'topo':
-          widgetIcon.style.top = '20px';
-          break;
-        case 'base':
-          widgetIcon.style.top = `${
-            window.innerHeight - widgetIcon.offsetHeight - 20
-          }px`;
-          break;
-      }
-      setTimeout(() => {
-        justDragged = false;
-      }, 100);
     }
-  });
 
-  function onMouseMove(e) {
-    if (!isDragging) return;
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-    if (!justDragged && Math.hypot(dx, dy) > DRAG_THRESHOLD) justDragged = true;
-    if (!justDragged) return;
-    const width = widgetIcon.offsetWidth;
-    const height = widgetIcon.offsetHeight;
-    let x = e.clientX - offsetX;
-    let y = e.clientY - offsetY;
-    x = Math.max(0, Math.min(window.innerWidth - width, x));
-    y = Math.max(0, Math.min(window.innerHeight - height, y));
-    widgetIcon.style.left = `${x}px`;
-    widgetIcon.style.top = `${y}px`;
-  }
-
-  // ==== Conteúdo ====
-  let latestData = null;
-
-  widgetIcon.addEventListener('click', () => {
-    if (justDragged) return;
-    widgetWindow.style.display =
-      widgetWindow.style.display === 'none' ? 'block' : 'none';
-    const rect = widgetIcon.getBoundingClientRect();
-    widgetWindow.style.top = rect.bottom + 5 + 'px';
-    widgetWindow.style.left = rect.left + 'px';
-    renderWidgetContent();
-  });
-
-  function renderWidgetContent() {
-    widgetWindow.innerHTML = `
-      <div><label>Endpoint:</label><input id="widgetEndpoint" style="width:100%; margin-bottom:6px;"/></div>
-      <div><label>Arquivo JSON:</label><input type="file" id="widgetJsonFile" accept=".json" style="margin-bottom:6px;"/></div>
-      <button id="widgetFetchBtn" style="width:100%; margin-bottom:6px;">Requisição</button>
-      <div id="widgetResponseProps" style="max-height:100px; overflow:auto; margin-bottom:6px; font-size:12px;"></div>
-      <div id="widgetPropSelection" style="display:none; margin-bottom:6px;">
-        <label>Propriedade:</label><select id="widgetPropSelect" style="width:100%; margin-bottom:6px;"></select>
-        <label>Tipo de Gráfico:</label><select id="widgetChartType" style="width:100%; margin-bottom:6px;">
-          <option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option><option value="doughnut">Doughnut</option>
-        </select>
-        <button id="widgetCreateChartBtn" style="width:100%; margin-bottom:6px;">Criar Gráfico</button>
-      </div>
-      <button id="widgetClearCharts" style="width:100%; background:#dc3545; color:white; border:none; padding:6px; border-radius:4px;">Limpar Gráficos</button>
-    `;
-    document.getElementById('widgetFetchBtn').onclick = handleFetch;
-    document.getElementById('widgetJsonFile').onchange = handleFile;
-    document.getElementById('widgetCreateChartBtn').onclick = () =>
-      createChartForProp(document.getElementById('widgetPropSelect').value);
-    document.getElementById('widgetClearCharts').onclick = () => {
-      chartContainer.innerHTML = '';
-      console.log('[criarIcone] Gráficos removidos do container.');
-    };
-  }
-
-  function handleFetch() {
-    const endpoint = document.getElementById('widgetEndpoint').value;
-    if (!endpoint) {
-      alert('Informe o endpoint');
-      return;
-    }
-    fetch(endpoint)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(processData)
-      .catch((err) => {
-        console.error(err);
-        alert('Erro na requisição: ' + err.message);
-      });
-  }
-
-  function handleFile(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
+    // 9) Funções de leitura de dados
+    async function handleFetch() {
+      const endpoint = document.getElementById('widgetEndpoint').value;
+      if (!endpoint) return alert('Informe o endpoint');
       try {
-        processData(JSON.parse(reader.result));
-      } catch (error) {
-        alert('JSON inválido');
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        processData(data);
+      } catch (err) {
+        alert('Erro na requisição: ' + err);
       }
-    };
-    reader.readAsText(file);
-  }
-
-  function processData(data) {
-    if (!Array.isArray(data) || data.length === 0) {
-      alert('O JSON deve ser um array de objetos não vazio');
-      return;
     }
-    latestData = data;
-    const props = Object.keys(data[0] || {});
-    document.getElementById('widgetResponseProps').innerHTML =
-      '<b>Propriedades:</b> <ul>' +
-      props.map((p) => `<li>${p}</li>`).join('') +
-      '</ul>';
-    const sel = document.getElementById('widgetPropSelect');
-    sel.innerHTML = props.map((p) => `<option>${p}</option>`).join('');
-    document.getElementById('widgetPropSelection').style.display = 'block';
-  }
-
-  async function createChartForProp(prop) {
-    if (!latestData) {
-      alert('Carregue os dados primeiro');
-      return;
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          processData(data);
+        } catch {
+          alert('JSON inválido');
+        }
+      };
+      reader.readAsText(file);
     }
-    await loadChartJS();
 
-    // Prepare container and canvas
-    const chartType = document.getElementById('widgetChartType').value;
-    const wrapper = document.createElement('div');
-    wrapper.style =
-      'margin: 20px 0; padding: 10px; border:1px solid #ccc; background:#fafafa; border-radius:6px;';
-    const title = document.createElement('h3');
-    title.textContent = `Gráfico: ${prop}`;
-    title.style = 'margin: 0 0 10px;';
-    wrapper.appendChild(title);
-    const canvas = document.createElement('canvas');
-    wrapper.appendChild(canvas);
-    chartContainer.appendChild(wrapper);
-    const ctx = canvas.getContext('2d');
+    // 10) Processa o JSON e exibe propriedades
+    function processData(data) {
+      if (!Array.isArray(data) || data.length === 0)
+        return alert('O JSON deve ser um array não vazio');
+      latestData = data;
+      const props = Object.keys(data[0]);
+      document.getElementById(
+        'widgetResponseProps',
+      ).innerHTML = `<b>Propriedades:</b><ul>${props
+        .map((p) => `<li>${p}</li>`)
+        .join('')}</ul>`;
+      const sel = document.getElementById('widgetPropSelect');
+      sel.innerHTML = props
+        .map((p) => `<option value="${p}">${p}</option>`)
+        .join('');
+      document.getElementById('widgetPropSelection').style.display = 'block';
+    }
 
-    // Compute labels for color generation
-    const labels = Array.from(
-      new Set(latestData.map((d) => d[prop] ?? '(vazio)')),
-    );
-    const bgColors = gerarCores(labels);
+    // 11) Carrega Chart.js dinamicamente, se necessário
+    async function loadChartJS() {
+      if (window.Chart) return;
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        // UMD build, não ES module
+        script.src =
+          'https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Falha ao carregar Chart.js'));
+        document.head.appendChild(script);
+      });
+    }
 
-    // Delegate to criarGrafico for full interactivity, filters, and legend
-    criarGrafico(
-      ctx,
-      chartType,
-      prop,
-      bgColors,
-      `Contagem de ${prop}`,
-      latestData,
-      null, // no callback
-    );
+    // 12) Cria e posiciona cada gráfico com drag & resize customizado
+    async function createChartForProp(prop) {
+      if (!latestData) return alert('Carregue os dados primeiro');
+      await loadChartJS();
+      const type = document.getElementById('widgetChartType').value;
 
-    // Close widget
-    widgetWindow.style.display = 'none';
+      // 12.1) Wrapper absoluto
+      const wrapper = document.createElement('div');
+      wrapper.className = 'chart-wrapper';
+      wrapper.style.top = '100px';
+      wrapper.style.left = '100px';
+      wrapper.style.width = '400px';
+      wrapper.style.height = '300px';
+
+      // 12.2) Título (drag handle), canvas e resize-handle
+      const title = document.createElement('h3');
+      title.textContent = `Gráfico: ${prop}`;
+      title.style.margin = '0 0 8px';
+      title.style.cursor = 'move';
+
+      const canvas = document.createElement('canvas');
+      const resizeHandle = document.createElement('div');
+      resizeHandle.className = 'resize-handle';
+
+      wrapper.append(title, canvas, resizeHandle);
+      chartContainer.append(wrapper);
+
+      // 12.3) Seleção ao clicar
+      wrapper.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        document
+          .querySelectorAll('.chart-wrapper.selected')
+          .forEach((w) => w.classList.remove('selected'));
+        wrapper.classList.add('selected');
+      });
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('.chart-wrapper')) {
+          document
+            .querySelectorAll('.chart-wrapper.selected')
+            .forEach((w) => w.classList.remove('selected'));
+        }
+      });
+
+      // 12.4) Drag pelo título
+      let isDragging = false,
+        dragX = 0,
+        dragY = 0;
+      title.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        isDragging = true;
+        const rect = wrapper.getBoundingClientRect();
+        dragX = e.clientX - rect.left;
+        dragY = e.clientY - rect.top;
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener(
+          'mouseup',
+          () => {
+            isDragging = false;
+            document.removeEventListener('mousemove', onDrag);
+          },
+          { once: true },
+        );
+      });
+      function onDrag(e) {
+        if (!isDragging) return;
+        const parentRect = chartContainer.getBoundingClientRect();
+        let x = e.clientX - parentRect.left - dragX;
+        let y = e.clientY - parentRect.top - dragY;
+        x = Math.max(0, Math.min(x, parentRect.width - wrapper.offsetWidth));
+        y = Math.max(0, Math.min(y, parentRect.height - wrapper.offsetHeight));
+        wrapper.style.left = `${x}px`;
+        wrapper.style.top = `${y}px`;
+      }
+
+      // 12.5) Resize customizado pelo handle
+      let isResizing = false,
+        startX,
+        startY,
+        startW,
+        startH;
+      let chartEntry, chartInstance;
+      resizeHandle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startW = wrapper.offsetWidth;
+        startH = wrapper.offsetHeight;
+        document.addEventListener('mousemove', onResize);
+        document.addEventListener(
+          'mouseup',
+          () => {
+            isResizing = false;
+            document.removeEventListener('mousemove', onResize);
+          },
+          { once: true },
+        );
+      });
+      function onResize(e) {
+        if (!isResizing) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        wrapper.style.width = Math.max(50, startW + dx) + 'px';
+        wrapper.style.height = Math.max(50, startH + dy) + 'px';
+        if (chartInstance && typeof chartInstance.resize === 'function') {
+          chartInstance.resize();
+        }
+      }
+
+      // 12.6) Cria o gráfico e mantém instância para resize
+      criarGrafico(
+        canvas.getContext('2d'),
+        type,
+        prop,
+        gerarCores([...new Set(latestData.map((d) => d[prop]))]),
+        `Contagem de ${prop}`,
+        latestData,
+      );
+      chartEntry = todosOsGraficos[todosOsGraficos.length - 1];
+      chartInstance = chartEntry && chartEntry.grafico;
+
+      // Fecha o widget após criar
+      widgetWindow.classList.add('hidden');
+    }
+
+    console.log('criarIcone: inicializado com sucesso');
+  } catch (err) {
+    console.error('criarIcone falhou:', err);
   }
-
-  function gerarCores(labels) {
-    const count = labels.length;
-    return labels.map(
-      (_, i) => `hsl(${Math.round((i * 360) / count)}, 65%, 55%)`,
-    );
-  }
-
-  console.log('[criarIcone] Inicialização concluída');
 }
-=======
-
-
->>>>>>> 3d127f3e869b2ca37cae653cb3bfd1c4fd5051c8
