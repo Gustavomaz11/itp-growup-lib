@@ -275,14 +275,13 @@ export function criarGrafico(
   aggregationType = 'count', // 'count' | 'sum' | 'mean'
   valueField = null, // campo numérico para sum/mean
 ) {
-  // Cópia imutável dos dados originais
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   let tipoAtual = tipoInicial;
   let grafico;
   let lastLabels = [];
   let lastValores = [];
 
-  const wrapper = ctx.canvas.parentNode; // container do <canvas>
+  const wrapper = ctx.canvas.parentNode;
 
   //
   // ——— CONTROLES DE PERÍODO (ANO / MÊS / TRIMESTRE) ———
@@ -384,13 +383,11 @@ export function criarGrafico(
     let labels, valores;
 
     if (aggregationType === 'count') {
-      // comportamento original de count
       if (porDuracao === false) {
-        if (!parametro_busca_fim) {
+        if (!parametro_busca_fim)
           throw new Error(
             'parametro_busca_fim obrigatório quando porDuracao=false',
           );
-        }
         ({ labels, valores } = processarDuracaoAtendimentos(
           dadosFiltrados,
           parametro_busca,
@@ -399,32 +396,30 @@ export function criarGrafico(
       } else {
         ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
       }
-    } else {
-      // sum ou mean
-      if (!valueField) {
+    } else if (aggregationType === 'sum' || aggregationType === 'mean') {
+      if (!valueField)
         throw new Error(
           'valueField obrigatório quando aggregationType for "sum" ou "mean"',
         );
-      }
       ({ labels, valores } = processarDadosAgregado(
         dadosFiltrados,
         parametro_busca,
         valueField,
         aggregationType,
       ));
+    } else {
+      throw new Error('aggregationType deve ser "count", "sum" ou "mean"');
     }
 
     lastLabels = labels;
     lastValores = valores;
 
-    // Se já existia, destrói e remove do registro
     if (grafico) {
       grafico.destroy();
       const idx = todosOsGraficos.findIndex((g) => g.grafico === grafico);
       if (idx > -1) todosOsGraficos.splice(idx, 1);
     }
 
-    // Configuração do Chart.js
     const config = {
       type: tipoAtual,
       data: {
@@ -477,11 +472,9 @@ export function criarGrafico(
       },
     };
 
-    // Cria e registra o gráfico
     grafico = new Chart(ctx, config);
     grafico._parametro_busca = parametro_busca;
 
-    // Registramos também o callback para uso posterior
     const total = dadosFiltrados.length;
     todosOsGraficos.push({
       grafico,
@@ -492,16 +485,15 @@ export function criarGrafico(
       callback,
       aggregationType,
       valueField,
+      renderizar, // Salva para reuso
       ultimoTotal: total,
     });
 
-    // Notifica callback
     if (callback) {
       callback({ total, variacaoTexto: null });
     }
   }
 
-  // primeiro render
   renderizar();
 
   //
@@ -633,44 +625,52 @@ function atualizarTodosOsGraficos() {
       porDuracao,
       parametro_busca_fim,
       callback,
-      renderizar, // Suporte a gráficos que possuem renderização personalizada
+      aggregationType,
+      valueField,
+      renderizar, // Se existir, use custom
     } = entry;
 
-    if (renderizar) {
-      // Caso o gráfico possua um método de renderização, chamamos ele diretamente
+    if (typeof renderizar === 'function') {
       renderizar();
-    } else {
-      // Lógica padrão para gráficos criados com `criarGrafico`
-      const dadosFiltrados = getDadosAtuais(dadosOriginais);
-      const { labels, valores } = porDuracao
-        ? processarDados(dadosFiltrados, parametro_busca)
-        : processarDuracaoAtendimentos(
-            dadosFiltrados,
-            parametro_busca,
-            parametro_busca_fim,
-          );
+      return;
+    }
 
-      grafico.data.labels = labels;
-      grafico.data.datasets[0].data = valores;
-      grafico.update();
+    const dadosFiltrados = getDadosAtuais(dadosOriginais);
+    let labels, valores;
 
-      // Chamamos o callback se ele existir
-      if (callback) {
-        const total = dadosFiltrados.length;
-        const totalAnterior = entry.ultimoTotal || total;
-
-        // Calculamos a variação percentual se possível
-        let variacaoTexto = null;
-        if (totalAnterior > 0) {
-          const variacao = ((total - totalAnterior) / totalAnterior) * 100;
-          variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
-        }
-
-        // Armazenamos o total atual para comparações futuras
-        entry.ultimoTotal = total;
-
-        callback({ total, variacaoTexto });
+    if (aggregationType === 'count') {
+      if (porDuracao === false) {
+        ({ labels, valores } = processarDuracaoAtendimentos(
+          dadosFiltrados,
+          parametro_busca,
+          parametro_busca_fim,
+        ));
+      } else {
+        ({ labels, valores } = processarDados(dadosFiltrados, parametro_busca));
       }
+    } else if (aggregationType === 'sum' || aggregationType === 'mean') {
+      ({ labels, valores } = processarDadosAgregado(
+        dadosFiltrados,
+        parametro_busca,
+        valueField,
+        aggregationType,
+      ));
+    }
+
+    grafico.data.labels = labels;
+    grafico.data.datasets[0].data = valores;
+    grafico.update();
+
+    if (callback) {
+      const total = dadosFiltrados.length;
+      const totalAnterior = entry.ultimoTotal || total;
+      let variacaoTexto = null;
+      if (totalAnterior > 0) {
+        const variacao = ((total - totalAnterior) / totalAnterior) * 100;
+        variacaoTexto = `${variacao > 0 ? '+' : ''}${variacao.toFixed(2)}%`;
+      }
+      entry.ultimoTotal = total;
+      callback({ total, variacaoTexto });
     }
   });
 }
@@ -1014,7 +1014,14 @@ function calcularEstatisticasGrafico(dados, categoryField) {
  * @param {Array} dadosOriginais - Dados de entrada para o gráfico.
  * @param {Array<string>} cores - Array de cores para as bolhas.
  */
-export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores) {
+export function criarGraficoBolha(
+  ctx,
+  eixoX,
+  eixoY,
+  raio,
+  dadosOriginais,
+  cores,
+) {
   const dadosOriginaisCopy = [...dadosOriginais]; // Mantém os dados originais imutáveis
   let grafico;
 
@@ -1037,13 +1044,25 @@ export function criarGraficoBolha(ctx, eixoX, eixoY, raio, dadosOriginais, cores
     const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
 
     // Verifica se os campos são strings e os converte se necessário
-    const isXString = dadosFiltrados.some((item) => isNaN(parseFloat(item[eixoX])));
-    const isYString = dadosFiltrados.some((item) => isNaN(parseFloat(item[eixoY])));
-    const isRaioString = dadosFiltrados.some((item) => isNaN(parseFloat(item[raio])));
+    const isXString = dadosFiltrados.some((item) =>
+      isNaN(parseFloat(item[eixoX])),
+    );
+    const isYString = dadosFiltrados.some((item) =>
+      isNaN(parseFloat(item[eixoY])),
+    );
+    const isRaioString = dadosFiltrados.some((item) =>
+      isNaN(parseFloat(item[raio])),
+    );
 
-    const xConverter = isXString ? converterParaNumeros(dadosFiltrados, eixoX) : (v) => parseFloat(v) || 0;
-    const yConverter = isYString ? converterParaNumeros(dadosFiltrados, eixoY) : (v) => parseFloat(v) || 0;
-    const raioConverter = isRaioString ? converterParaNumeros(dadosFiltrados, raio) : (v) => parseFloat(v) || 5;
+    const xConverter = isXString
+      ? converterParaNumeros(dadosFiltrados, eixoX)
+      : (v) => parseFloat(v) || 0;
+    const yConverter = isYString
+      ? converterParaNumeros(dadosFiltrados, eixoY)
+      : (v) => parseFloat(v) || 0;
+    const raioConverter = isRaioString
+      ? converterParaNumeros(dadosFiltrados, raio)
+      : (v) => parseFloat(v) || 5;
 
     // Processa os dados para criar os pontos do gráfico
     const dadosGrafico = dadosFiltrados.map((item, index) => ({
