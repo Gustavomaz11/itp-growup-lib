@@ -1,6 +1,6 @@
 {
   "name": "gmt-charts-growup",
-  "version": "2.3.94",
+  "version": "2.3.95",
   "main": "dist/index.umd.js",
   "module": "dist/index.umd.js",
   "scripts": {
