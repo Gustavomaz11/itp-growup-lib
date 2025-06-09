@@ -932,6 +932,51 @@ function adicionarEstilosTabela() {
         font-size: 0.92rem;
       }
     }
+    .pagination-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      margin: 18px 0 12px 0;
+      user-select: none;
+    }
+    .pagination-controls button, .pagination-controls .page-ellipsis {
+      border: none;
+      outline: none;
+      min-width: 36px;
+      height: 36px;
+      background: #fff;
+      color: #2877c5;
+      font-size: 1rem;
+      border-radius: 8px;
+      margin: 0 1px;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+      box-shadow: none;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pagination-controls button[disabled] {
+      color: #c9cfd8 !important;
+      background: #fff;
+      cursor: default;
+    }
+
+    .pagination-controls .active-page {
+      background: #2877c5 !important;
+      color: #fff !important;
+      font-weight: 700;
+    }
+
+    .pagination-controls .page-ellipsis {
+      background: none !important;
+      color: #b4bfd3;
+      cursor: default;
+      pointer-events: none;
+    }
   `;
   document.head.appendChild(style);
 }
