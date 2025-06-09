@@ -764,16 +764,78 @@ export function criarDataTable(containerEl, obj, colunas, options = {}) {
   function atualizarPaginacao() {
     paginationEl.innerHTML = '';
     if (totalPages <= 1) return;
-    for (let p = 1; p <= totalPages; p++) {
+
+    // Helper para criar botão
+    function criarBotao(text, page, opts = {}) {
       const btn = document.createElement('button');
-      btn.textContent = p;
-      if (p === currentPage) btn.disabled = true;
+      btn.textContent = text;
+      if (opts.disabled) btn.disabled = true;
+      if (opts.active) btn.classList.add('active');
       btn.addEventListener('click', () => {
-        currentPage = p;
+        currentPage = page;
         renderizarLinhas();
       });
-      paginationEl.appendChild(btn);
+      return btn;
     }
+
+    // Helper para elipses
+    function criarElipse() {
+      const span = document.createElement('span');
+      span.className = 'page-ellipsis';
+      span.textContent = '...';
+      return span;
+    }
+
+    // Setas
+    paginationEl.appendChild(
+      criarBotao('⟨', currentPage - 1, { disabled: currentPage === 1 }),
+    );
+
+    let pages = [];
+    if (totalPages <= 7) {
+      // Mostra tudo
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 4) {
+        pages = [1, 2, 3, 4, 5, '...', totalPages];
+      } else if (currentPage >= totalPages - 3) {
+        pages = [
+          1,
+          '...',
+          totalPages - 4,
+          totalPages - 3,
+          totalPages - 2,
+          totalPages - 1,
+          totalPages,
+        ];
+      } else {
+        pages = [
+          1,
+          '...',
+          currentPage - 1,
+          currentPage,
+          currentPage + 1,
+          '...',
+          totalPages,
+        ];
+      }
+    }
+
+    pages.forEach((p) => {
+      if (p === '...') {
+        paginationEl.appendChild(criarElipse());
+      } else {
+        paginationEl.appendChild(
+          criarBotao(p, p, { active: currentPage === p }),
+        );
+      }
+    });
+
+    paginationEl.appendChild(
+      criarBotao('⟩', currentPage + 1, {
+        disabled: currentPage === totalPages,
+      }),
+    );
   }
 
   // 5) eventos de clique em célula para filtro
