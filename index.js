@@ -457,17 +457,22 @@ export function criarGrafico(
                 }));
               },
             },
+            // AQUI GARANTE O CLIQUE PARA TODOS OS TIPOS!
             onClick: (_, item) => {
               const val = grafico.data.labels[item.index];
-              toggleFiltro(
-                parametro_busca,
-                porDuracao
-                  ? val
-                  : `${parametro_busca}|${parametro_busca_fim}_duracao:${val}`,
-              );
+              toggleFiltro(parametro_busca, val);
               atualizarTodosOsGraficos();
             },
           },
+        },
+        // ATIVA O CLIQUE NO ELEMENTO (barra/linha)
+        onClick: (e, elements) => {
+          if (elements && elements.length > 0) {
+            const idx = elements[0].index;
+            const val = grafico.data.labels[idx];
+            toggleFiltro(parametro_busca, val);
+            atualizarTodosOsGraficos();
+          }
         },
       },
     };
