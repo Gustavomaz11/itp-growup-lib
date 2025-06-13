@@ -1,12 +1,7 @@
 import Chart from 'chart.js/auto';
 import { jsPDF } from 'jspdf';
 
-import html2canvas from 'html2canvas';
 
-// —————————————————————————————————————————————————————————————————————————————————
-// 1) ESTILOS E FUNÇÕES PARA O SPINNER
-// —————————————————————————————————————————————————————————————————————————————————
-// Adiciona estilo do spinner + porcentagem
 const spinnerStyle = document.createElement('style');
 spinnerStyle.textContent = `
   #loadingSpinner {
@@ -40,7 +35,6 @@ spinnerStyle.textContent = `
 `;
 document.head.appendChild(spinnerStyle);
 
-// Exibe o overlay com spinner e texto de 0%
 function showLoadingSpinner() {
   if (!document.getElementById('loadingSpinner')) {
     const overlay = document.createElement('div');
@@ -53,7 +47,6 @@ function showLoadingSpinner() {
   }
 }
 
-// Atualiza o texto de porcentagem (ex: 45%)
 function updateLoadingSpinner(percent) {
   const overlay = document.getElementById('loadingSpinner');
   if (overlay) {
@@ -62,22 +55,17 @@ function updateLoadingSpinner(percent) {
   }
 }
 
-// Remove o overlay
 function hideLoadingSpinner() {
   const overlay = document.getElementById('loadingSpinner');
   if (overlay) overlay.remove();
 }
 
-/** Estado compartilhado de filtros (chart + table) */
 export const filtrosAtuais = {};
 
-/** Armazena todas as instâncias de tabela criadas */
 const todasAsTabelas = [];
 
-/** Armazena todas as instâncias de gráfico (já existe) */
 let todosOsGraficos = [];
 
-// Ordem fixa de meses para garantir Janeiro→Dezembro
 const ordemMeses = [
   'Janeiro',
   'Fevereiro',
@@ -93,7 +81,6 @@ const ordemMeses = [
   'Dezembro',
 ];
 
-// Cache para converter “MM” → nome do mês
 const cacheMeses = {
   '01': 'Janeiro',
   '02': 'Fevereiro',
@@ -109,26 +96,25 @@ const cacheMeses = {
   12: 'Dezembro',
 };
 
-// --- funções de filtro e totalização ---
+
 
 function getDadosAtuais(dadosOriginais) {
   if (Object.keys(filtrosAtuais).length === 0) return dadosOriginais;
 
   return dadosOriginais.filter((item) =>
     Object.entries(filtrosAtuais).every(([param, vals]) => {
-      // ── novo suporte a ano ───────────────────────────────────────────────
+    
       if (param.endsWith('_ano')) {
         const campo = param.replace('_ano', '');
         const ano = item[campo]?.slice(0, 4);
         return ano && vals.includes(ano);
       }
-      // ─────────────────────────────────────────────────────────────────────
 
-      // filtro de duração...
+
       if (param.endsWith('_duracao')) {
         /* ... */
       }
-      // filtro normal (inclui data para mês)...
+      
       let v = item[param];
       if (param.includes('data') && v) {
         const m = v.slice(5, 7);
@@ -157,7 +143,7 @@ function processarDadosAgregado(dados, campoGroup, campoValor, tipo) {
     sumMap.set(key, (sumMap.get(key) || 0) + val);
   });
 
-  // Mantém ordem de aparição
+
   const labels = Array.from(
     new Set(dados.map((item) => item[campoGroup]).filter((v) => v != null)),
   );
@@ -174,7 +160,7 @@ function processarDadosAgregado(dados, campoGroup, campoValor, tipo) {
   return { labels, valores };
 }
 
-// --- processamento de dados com ordenação condicional ---
+
 
 function processarDados(dados, parametro_busca) {
   const isDateTime = (v) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v);
@@ -202,7 +188,7 @@ function processarDados(dados, parametro_busca) {
   return { labels, valores };
 }
 
-// --- bins globais para duração ---
+
 
 function binsGlobais() {
   return [
@@ -212,12 +198,12 @@ function binsGlobais() {
     { label: '> 1h < 24h', min: 60, max: 1440 },
     { label: '> 24h < 48h', min: 1440, max: 2880 },
     { label: '> 48h < 72h', min: 2880, max: 4320 },
-    { label: '> 72h < 5d', min: 4320, max: 7200 }, // até 5 dias
+    { label: '> 72h < 5d', min: 4320, max: 7200 }, 
     { label: '> 5 dias', min: 7200, max: Infinity },
   ];
 }
 
-// --- processamento de durações de atendimento em bins com filtro e ocultação de zero ---
+
 
 function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
   const bins = binsGlobais();
@@ -236,7 +222,7 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
     }
   });
 
-  // aplica filtro de duração, se existir
+
   const durKey = `${campoInicio}|${campoFim}_duracao`;
   const filtroDur = filtrosAtuais[durKey];
 
@@ -252,12 +238,12 @@ function processarDuracaoAtendimentos(dados, campoInicio, campoFim) {
   return { labels, valores };
 }
 
-// --- criação e atualização de gráficos ---
+
 
 /**
  * @param ctx                  contexto do canvas
  * @param tipoInicial          'bar'|'pie'|...
- * @param parametro_busca      campo de início (data ou outro)
+ * @param parametro_busca      campo de início
  * @param backgroundColor      array de cores
  * @param chave                rótulo do dataset
  * @param obj                  array de objetos com dados
@@ -279,7 +265,7 @@ export function criarGrafico(
   aggregationType = 'count', // 'count' | 'sum' | 'mean'
   valueField = null, // campo numérico para sum/mean
 ) {
-  // 0) cópia dos dados e estado interno
+
   const dadosOriginais = Array.isArray(obj) ? [...obj] : obj.slice();
   let grafico = null;
   let lastLabels = [];
@@ -287,11 +273,7 @@ export function criarGrafico(
   let tipoAtual = tipoInicial;
   const wrapper = ctx.canvas.parentNode;
 
-  //
-  // ——— CONTROLES DE PERÍODO (ANO / MÊS / TRIMESTRE) ———
-  //
 
-  // 1) Detecta automaticamente o campo de data no JSON
   const dateField = Object.keys(dadosOriginais[0] || {}).find((field) =>
     dadosOriginais.every(
       (item) =>
@@ -309,7 +291,7 @@ export function criarGrafico(
       marginBottom: '8px',
     });
 
-    // Botão "Todos"
+
     const btnAll = document.createElement('button');
     btnAll.textContent = 'Todos';
     btnAll.style.cursor = 'pointer';
@@ -319,7 +301,7 @@ export function criarGrafico(
     });
     periodDiv.appendChild(btnAll);
 
-    // Botões de ANO
+
     const anos = Array.from(
       new Set(dadosOriginais.map((item) => item[dateField].slice(0, 4))),
     );
@@ -334,7 +316,6 @@ export function criarGrafico(
       periodDiv.appendChild(btn);
     });
 
-    // Select MÊS
     const selMes = document.createElement('select');
     selMes.appendChild(new Option('Todos meses', ''));
     const ordemMeses = [
@@ -360,7 +341,6 @@ export function criarGrafico(
     });
     periodDiv.appendChild(selMes);
 
-    // Select TRIMESTRE
     const selTri = document.createElement('select');
     selTri.appendChild(new Option('Todos trimestres', ''));
     const quarters = [
@@ -385,11 +365,8 @@ export function criarGrafico(
     wrapper.insertBefore(periodDiv, wrapper.firstChild);
   }
 
-  //
-  // ——— FUNÇÃO QUE (RE)DESENHA O GRÁFICO ———
-  //
   function renderizar() {
-    // 1) monta durKey e clickHandler
+
     const durKey = `${parametro_busca}|${parametro_busca_fim}_duracao`;
     const clickHandler = (val) => {
       const chaveFiltro = porDuracao ? parametro_busca : durKey;
@@ -397,11 +374,10 @@ export function criarGrafico(
       atualizarTodosOsGraficos();
     };
 
-    // 2) filtra dados
+
     const dadosFiltrados = getDadosAtuais(dadosOriginais);
     let labels, valores;
 
-    // 3) escolhe aggregationType
     if (aggregationType === 'count') {
       if (!porDuracao) {
         if (!parametro_busca_fim) {
@@ -433,11 +409,10 @@ export function criarGrafico(
       throw new Error('aggregationType deve ser "count", "sum" ou "mean"');
     }
 
-    // 4) guarda para tabela e debug
+
     lastLabels = labels;
     lastValores = valores;
 
-    // 5) atualiza ou cria gráfico
     if (grafico) {
       grafico.data.labels = labels;
       grafico.data.datasets[0].data = valores;
@@ -513,18 +488,15 @@ export function criarGrafico(
       });
     }
 
-    // 6) callback
+
     if (typeof callback === 'function') {
       callback({ total: dadosFiltrados.length, variacaoTexto: null });
     }
   }
 
-  // renderização inicial
+
   renderizar();
 
-  //
-  // ——— CONTROLES VISUAIS ADICIONAIS ———
-  //
   const controls = document.createElement('div');
   Object.assign(controls.style, {
     display: 'flex',
@@ -533,7 +505,6 @@ export function criarGrafico(
     marginBottom: '8px',
   });
 
-  // select de tipos
   const tipos = ['bar', 'line', 'pie', 'doughnut', 'radar', 'polarArea'];
   const sel = document.createElement('select');
   Object.assign(sel.style, {
@@ -553,7 +524,6 @@ export function criarGrafico(
   });
   controls.appendChild(sel);
 
-  // botão tabela
   const btn = document.createElement('button');
   btn.textContent = 'Ver tabela';
   Object.assign(btn.style, {
@@ -566,7 +536,6 @@ export function criarGrafico(
   controls.appendChild(btn);
   wrapper.insertBefore(controls, ctx.canvas);
 
-  // container da tabela
   const tableContainer = document.createElement('div');
   tableContainer.style.display = 'none';
   wrapper.appendChild(tableContainer);
@@ -623,7 +592,6 @@ export function criarGrafico(
   });
 }
 
-// Modificação na função toggleFiltro para atualizar KPIs também
 function toggleFiltro(parametro, valor) {
   if (!filtrosAtuais[parametro]) filtrosAtuais[parametro] = [];
   const idx = filtrosAtuais[parametro].indexOf(valor);
@@ -633,7 +601,6 @@ function toggleFiltro(parametro, valor) {
     if (filtrosAtuais[parametro].length === 0) delete filtrosAtuais[parametro];
   }
 
-  // atualiza tudo
   atualizarTodosOsGraficos();
   atualizarTodasAsTabelas();
 }
@@ -649,7 +616,7 @@ function atualizarTodosOsGraficos() {
       callback,
       aggregationType,
       valueField,
-      renderizar, // Se existir, use custom
+      renderizar, 
     } = entry;
 
     if (typeof renderizar === 'function') {
@@ -697,7 +664,6 @@ function atualizarTodosOsGraficos() {
   });
 }
 
-// Se precisar de botões de mês na interface, mantém igual
 export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
   ordemMeses.forEach((mes) => {
     const btn = document.createElement('button');
@@ -711,50 +677,41 @@ export function adicionarFiltrosDeMeses(dadosOriginais, parametro) {
 }
 
 /**
- * Inicializa uma data table virtualizada dentro de `containerEl`.
  * @param {HTMLElement} containerEl  Elemento que conterá a tabela.
- * @param {Array<Object>} obj        Array de objetos (mesmos que você passaria ao criarGrafico).
+ * @param {Array<Object>} obj        Array de objetos.
  * @param {Array<string>} colunas    Nome das propriedades a exibir como colunas.
- * @param {Object} options           Configurações (itensPorPágina, alturaLinha, etc).
+ * @param {Object} options           Configurações.
  */
 export function criarDataTable(containerEl, obj, colunas, options = {}) {
-  // 1) mescla options com defaults
+
   const CONFIG = Object.assign(
     {
       itemsPerPage: 50,
       virtualRowHeight: 35,
       debounceTime: 200,
-      // … outros defaults que você quiser
     },
     options,
   );
 
-  // 2) estado interno da tabela
+ 
   let dadosOriginaisTabela = obj;
   let dadosFiltradosTabela = [...dadosOriginaisTabela];
   let totalPages = 1;
   let currentPage = 1;
 
-  // 3) monta DOM (header fixo, container scroll, <tbody> vazio, botão reset, info, etc)
   const { headerEl, scrollEl, tbodyEl, infoEl, paginationEl } =
     montarEstruturaTabela(containerEl, colunas);
 
-  // 4) funções internas:
-
   function renderizarLinhas() {
-    // usa getDadosAtuais para filtrar
     dadosFiltradosTabela = getDadosAtuais(dadosOriginaisTabela);
     totalPages = Math.ceil(dadosFiltradosTabela.length / CONFIG.itemsPerPage);
 
-    // calcula slice de currentPage se você quiser paginação real,
-    // ou apenas virtual scroll puro — aqui exemplifico paginação real:
     const start = (currentPage - 1) * CONFIG.itemsPerPage;
     const pageData = dadosFiltradosTabela.slice(
       start,
       start + CONFIG.itemsPerPage,
     );
 
-    // limpa tbody e preenche
     tbodyEl.innerHTML = '';
     pageData.forEach((item) => {
       const tr = document.createElement('tr');
@@ -787,7 +744,6 @@ export function criarDataTable(containerEl, obj, colunas, options = {}) {
     paginationEl.innerHTML = '';
     if (totalPages <= 1) return;
 
-    // Helper para criar botão
     function criarBotao(text, page, opts = {}) {
       const btn = document.createElement('button');
       btn.textContent = text;
@@ -800,7 +756,6 @@ export function criarDataTable(containerEl, obj, colunas, options = {}) {
       return btn;
     }
 
-    // Helper para elipses
     function criarElipse() {
       const span = document.createElement('span');
       span.className = 'page-ellipsis';
@@ -808,14 +763,13 @@ export function criarDataTable(containerEl, obj, colunas, options = {}) {
       return span;
     }
 
-    // Setas
+
     paginationEl.appendChild(
       criarBotao('⟨', currentPage - 1, { disabled: currentPage === 1 }),
     );
 
     let pages = [];
     if (totalPages <= 7) {
-      // Mostra tudo
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
       if (currentPage <= 4) {
@@ -860,38 +814,28 @@ export function criarDataTable(containerEl, obj, colunas, options = {}) {
     );
   }
 
-  // 5) eventos de clique em célula para filtro
+
   containerEl.addEventListener('click', (e) => {
     if (e.target.classList.contains('celula-clicavel')) {
       const coluna = e.target.dataset.coluna;
       const valor = e.target.dataset.valor;
       toggleFiltro(coluna, valor);
-      // toggleFiltro já chama renderizarLinhas e atualizarTodosOsGrafficos
     }
   });
 
-  // 6) registra esta instância para atualizações globais
   todasAsTabelas.push({ render: renderizarLinhas });
 
-  // 7) dispara o primeiro render
   renderizarLinhas();
 }
 
-// chama todas as tabelas quando toggleFiltro for usado
 function atualizarTodasAsTabelas() {
   todasAsTabelas.forEach((t) => t.render());
 }
 
-// —––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// helpers de DOM da tabela
-// (extraia/adapte do seu script.js original: montarEstruturaTabela,
-// adicionarEstilos, etc.)
-// —––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
 function montarEstruturaTabela(containerEl, colunas) {
-  // Limpa container e cria header, scroll, tbody, info, paginação…
   containerEl.innerHTML = '';
-  adicionarEstilosTabela(); // injeta CSS se ainda não existir
+  adicionarEstilosTabela();
 
   const infoEl = document.createElement('div');
   infoEl.className = 'table-info';
@@ -1071,7 +1015,6 @@ async function gerarRelatorio(dadosOriginais) {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     let cursorY = 40;
 
-    // --- Cabeçalho ---
     doc.setFontSize(18);
     doc.text('Relatório de Projeções e Resultados', 40, cursorY);
     cursorY += 25;
@@ -1086,7 +1029,6 @@ async function gerarRelatorio(dadosOriginais) {
     );
     cursorY += 30;
 
-    // Verificações de segurança para todosOsGraficos
     if (
       !todosOsGraficos ||
       !Array.isArray(todosOsGraficos) ||
@@ -1119,7 +1061,6 @@ async function gerarRelatorio(dadosOriginais) {
     const total = entries.length;
     let tarefas = [];
 
-    // Prepara as imagens e estatísticas com validação
     for (const entry of entries) {
       try {
         if (
@@ -1141,11 +1082,9 @@ async function gerarRelatorio(dadosOriginais) {
         tarefas.push({ grafico: entry.grafico, imgData, imgW, imgH, stats });
       } catch (err) {
         console.error('Erro ao processar gráfico:', err);
-        // Continuamos com os outros gráficos em caso de erro
       }
     }
 
-    // Se depois da validação não sobrar nenhum gráfico válido
     if (tarefas.length === 0) {
       doc.text(
         'Os gráficos disponíveis não puderam ser processados corretamente.',
@@ -1159,7 +1098,6 @@ async function gerarRelatorio(dadosOriginais) {
     for (let i = 0; i < tarefas.length; i++) {
       const { grafico, imgData, imgW, imgH, stats } = tarefas[i];
 
-      // Validação de segurança para grafico
       if (
         !grafico ||
         !grafico.data ||
@@ -1172,13 +1110,11 @@ async function gerarRelatorio(dadosOriginais) {
         continue;
       }
 
-      // paginação
       if (cursorY + imgH > 780) {
         doc.addPage();
         cursorY = 40;
       }
 
-      // gráfico
       try {
         doc.addImage(imgData, 'PNG', 40, cursorY, imgW, imgH);
         cursorY += imgH + 10;
@@ -1188,7 +1124,6 @@ async function gerarRelatorio(dadosOriginais) {
         cursorY += 20;
       }
 
-      // tabela de valores
       const labels = grafico.data.labels || [];
       const valores = grafico.data.datasets[0].data || [];
       doc.setFontSize(11);
@@ -1204,7 +1139,6 @@ async function gerarRelatorio(dadosOriginais) {
 
       const labelGraf = grafico.data.datasets[0].label || '';
       if (labelGraf === 'SLA') {
-        // SLA ano-a-ano por bin
         if (
           stats &&
           stats.statsPorCategoria &&
@@ -1222,7 +1156,6 @@ async function gerarRelatorio(dadosOriginais) {
               cursorY = 40;
             }
 
-            // Extrai o trecho com validação
             let trecho = '';
             const match = bin.categoria.match(/> *([^<]+)/);
             if (match && match[1]) {
@@ -1245,8 +1178,6 @@ async function gerarRelatorio(dadosOriginais) {
         updateLoadingSpinner(Math.round(((i + 1) / total) * 100));
         continue;
       }
-
-      // Verificações para estatísticas
       if (
         !stats ||
         !stats.statsPorCategoria ||
@@ -1256,7 +1187,6 @@ async function gerarRelatorio(dadosOriginais) {
         continue;
       }
 
-      // bloco: variação ano-a-ano total
       if (stats.anoAnterior && stats.anoRecente) {
         if (cursorY > 760) {
           doc.addPage();
@@ -1287,7 +1217,6 @@ async function gerarRelatorio(dadosOriginais) {
         });
         cursorY += 20;
 
-        // bloco: variação mês-a-mês ano-a-ano
         if (cursorY > 760) {
           doc.addPage();
           cursorY = 40;
@@ -1326,7 +1255,6 @@ async function gerarRelatorio(dadosOriginais) {
         });
         cursorY += 20;
 
-        // bloco: variação mês-a-mês (relativo ao mês anterior)
         if (cursorY > 760) {
           doc.addPage();
           cursorY = 40;
@@ -1372,7 +1300,6 @@ async function gerarRelatorio(dadosOriginais) {
     doc.save('Relatorio_Visual_Completo.pdf');
   } catch (error) {
     console.error('Erro ao gerar relatório:', error);
-    // Mostra mensagem de erro na página
     const errorDiv = document.createElement('div');
     errorDiv.style.color = 'red';
     errorDiv.style.padding = '10px';
@@ -1381,7 +1308,6 @@ async function gerarRelatorio(dadosOriginais) {
     errorDiv.textContent = `Erro ao gerar relatório: ${error.message}. Tente novamente mais tarde.`;
     document.body.appendChild(errorDiv);
 
-    // Remove após 10 segundos
     setTimeout(() => {
       if (errorDiv.parentNode) {
         errorDiv.parentNode.removeChild(errorDiv);
@@ -1393,8 +1319,7 @@ async function gerarRelatorio(dadosOriginais) {
 }
 
 /**
- * Cria e injeta o botão “Gerar Relatório” no container indicado.
- * @param {Array<Object>} dadosOriginais – seu array completo de dados.
+ * @param {Array<Object>} dadosOriginais – array completo de dados.
  * @param {HTMLElement} containerEl – elemento onde o botão será inserido.
  */
 export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
@@ -1414,11 +1339,7 @@ export function criarBotaoGerarRelatorio(dadosOriginais, containerEl) {
   return btn;
 }
 
-/**
- * Calcula estatísticas para cada categoria de um gráfico com validação robusta de dados
- */
 function calcularEstatisticasGrafico(dados, categoryField) {
-  // Verificação de segurança para evitar erros quando dados estão vazios
   if (!dados || !Array.isArray(dados) || dados.length === 0) {
     return {
       anoRecente: null,
@@ -1427,7 +1348,6 @@ function calcularEstatisticasGrafico(dados, categoryField) {
     };
   }
 
-  // 1) Detecta campo de data com verificação de segurança
   const dateField = dados[0]
     ? Object.keys(dados[0]).find(
         (f) =>
@@ -1445,7 +1365,6 @@ function calcularEstatisticasGrafico(dados, categoryField) {
     };
   }
 
-  // 2) Conta ocorrências por ESCALA year|month|category com validação
   const counts = {};
   dados.forEach((item) => {
     if (!item || !item[dateField]) return;
@@ -1458,7 +1377,6 @@ function calcularEstatisticasGrafico(dados, categoryField) {
     counts[key] = (counts[key] || 0) + 1;
   });
 
-  // 3) Descobre anos e categorias
   const anos = Array.from(
     new Set(Object.keys(counts).map((k) => k.split('|')[0])),
   ).sort();
@@ -1477,14 +1395,13 @@ function calcularEstatisticasGrafico(dados, categoryField) {
     new Set(Object.keys(counts).map((k) => k.split('|')[2])),
   );
 
-  // 4) Monta statsPorCategoria
+
   const statsPorCategoria = categorias.map((cat) => {
     let totalRec = 0,
       totalAnt = 0;
     const variacaoMeses = [];
     const variacaoMensal = [];
 
-    // Primeiro calcula year-to-year e coleta totais mensais
     const totaisMesRec = [],
       totaisMesAnt = [];
     ordemMeses.forEach((nome, i) => {
@@ -1496,15 +1413,12 @@ function calcularEstatisticasGrafico(dados, categoryField) {
       totalRec += rec;
       totalAnt += ant;
 
-      // variação ano-a-ano por mês:
       const vYA = ant ? ((rec - ant) / ant) * 100 : 0;
       variacaoMeses.push({ mes: nome, variacao: vYA });
     });
 
-    // variação total ano-a-ano
     const vAno = totalAnt ? ((totalRec - totalAnt) / totalAnt) * 100 : 0;
 
-    // agora variação mensal dentro de anoRec
     for (let i = 0; i < ordemMeses.length; i++) {
       const nome = ordemMeses[i];
       if (i === 0) {
@@ -1529,10 +1443,9 @@ function calcularEstatisticasGrafico(dados, categoryField) {
 }
 
 /**
- * Cria um gráfico de bolhas com agregação (count, sum, mean).
  * @param {HTMLElement} ctx - Contexto do canvas.
- * @param {string} eixoX - Campo eixo X (agrupador).
- * @param {string} eixoY - Campo eixo Y (agrupador).
+ * @param {string} eixoX - eixo X .
+ * @param {string} eixoY -  eixo Y.
  * @param {string} raio - Campo do tamanho da bolha (agrupador ou numérico).
  * @param {Array} dadosOriginais - Dados de entrada.
  * @param {Array<string>} cores - Array de cores para as bolhas.
@@ -1553,10 +1466,8 @@ export function criarGraficoBolha(
   let grafico;
 
   function agruparDados(dados) {
-    // Mapeia cada combinação única de X/Y/R para suas agregações
     const grupoMap = new Map();
     dados.forEach((item) => {
-      // Chave é uma string do tipo "x|y|r"
       const chave =
         String(item[eixoX]) +
         '|' +
@@ -1581,7 +1492,6 @@ export function criarGraficoBolha(
       obj.sum += isNaN(valNum) ? 0 : valNum;
     });
 
-    // Gera o array final para o gráfico de bolhas
     const result = [];
     for (const [_, v] of grupoMap) {
       result.push({
@@ -1589,19 +1499,17 @@ export function criarGraficoBolha(
         y: isNaN(parseFloat(v.y)) ? v.y : parseFloat(v.y),
         r:
           aggregationType === 'count'
-            ? v.count * 6 // multiplica para ficar visual (ajuste se quiser)
+            ? v.count * 6 
             : aggregationType === 'sum'
             ? v.sum
             : v.count > 0
             ? v.sum / v.count
             : 0,
-        // cor será atribuída depois
       });
     }
     return result;
   }
 
-  // Conversor para valores numéricos (para string-categoria)
   function converterParaNumeros(array, campo) {
     const mapa = {};
     let idx = 1;
@@ -1615,7 +1523,6 @@ export function criarGraficoBolha(
     const dadosFiltrados = getDadosAtuais(dadosOriginaisCopy);
     let dadosGrafico = agruparDados(dadosFiltrados);
 
-    // Detecta se precisa converter algum eixo para número
     const xIsString = dadosGrafico.some((d) => isNaN(d.x));
     const yIsString = dadosGrafico.some((d) => isNaN(d.y));
     const rIsString = dadosGrafico.some((d) => isNaN(d.r));
@@ -1648,7 +1555,7 @@ export function criarGraficoBolha(
               label: `Bolha (${eixoX}, ${eixoY}, ${raio}) [${aggregationType}]`,
               data: dadosGrafico,
               backgroundColor: dadosGrafico.map((d) => d.backgroundColor),
-              parsing: false, // Para usar {x, y, r}
+              parsing: false,
             },
           ],
         },
@@ -1693,11 +1600,10 @@ export function criarGraficoBolha(
 }
 
 /**
- * Cria um gráfico misto (barra + linha) que reage a filtros globais.
- * @param {HTMLCanvasElement} ctx - Contexto do canvas onde será renderizado.
- * @param {string} eixoX - Campo para o eixo X (string ou número).
- * @param {string} eixoY - Campo para o eixo Y (números).
- * @param {Array<Object>} obj - Array de dados originais.
+ * @param {HTMLCanvasElement} ctx - Contexto do canvas.
+ * @param {string} eixoX -  eixo X (string ou número).
+ * @param {string} eixoY -  eixo Y (números).
+ * @param {Array<Object>} obj - Array de dados.
  * @param {string} titulo - Título do gráfico.
  */
 export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
@@ -1767,7 +1673,7 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
         },
         scales: {
           x: {
-            // Configurações do eixo X
+            // ADICIONE A CONFIGURAÇÃO, VICTOR!
           },
           y: {
             beginAtZero: true,
@@ -1777,10 +1683,8 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
     });
   }
 
-  // Primeiro render
   renderizar();
 
-  // Registra para reagir aos filtros globais
   todosOsGraficos.push({
     grafico,
     dadosOriginais,
@@ -1788,26 +1692,20 @@ export function criarGraficoMisto(ctx, eixoX, eixoY, obj, titulo = '') {
   });
 }
 
+
 /**
- * Cria o ícone flutuante, janela de configuração e gráficos dinâmicos.
- * O parâmetro chartContainer indica onde os gráficos serão renderizados.
- */
-/**
- * Adiciona um widget flutuante para criar gráficos dinâmicos a partir de JSON/endpoint.
  *
  * @param {HTMLElement} chartContainer Elemento que receberá os gráficos gerados.
  */
 
 export function criarIcone(chartContainer) {
   try {
-    // 1) Validação de container
     if (!(chartContainer instanceof HTMLElement)) {
       console.error('criarIcone: chartContainer inválido', chartContainer);
       alert('Você precisa passar um elemento válido como chartContainer.');
       return;
     }
 
-    // 2) Injeta CSS global (apenas uma vez)
     if (!document.getElementById('widget-global-styles')) {
       const style = document.createElement('style');
       style.id = 'widget-global-styles';
@@ -1855,20 +1753,17 @@ export function criarIcone(chartContainer) {
       document.head.appendChild(style);
     }
 
-    // 3) Cria o ícone flutuante
     const widgetIcon = document.createElement('button');
     widgetIcon.id = 'floatingWidgetIcon';
     widgetIcon.className = 'widget-icon';
     widgetIcon.textContent = 'ITP';
     document.body.appendChild(widgetIcon);
 
-    // 4) Cria a janela de configuração
     const widgetWindow = document.createElement('div');
     widgetWindow.id = 'floatingWidgetWindow';
     widgetWindow.className = 'widget-window hidden';
     document.body.appendChild(widgetWindow);
 
-    // 5) Lógica de arrastar o ícone
     let isDraggingIcon = false,
       iconOffsetX = 0,
       iconOffsetY = 0;
@@ -1901,7 +1796,6 @@ export function criarIcone(chartContainer) {
       widgetIcon.style.top = `${y}px`;
     }
 
-    // 6) Toggle da janela ao clicar no ícone
     widgetIcon.addEventListener('click', () => {
       widgetWindow.classList.toggle('hidden');
       if (!widgetWindow.classList.contains('hidden')) {
@@ -1912,10 +1806,8 @@ export function criarIcone(chartContainer) {
       }
     });
 
-    // 7) Estado interno para os dados
     let latestData = null;
 
-    // 8) Monta o HTML interno da janela e associa eventos
     function renderWidgetContent() {
       widgetWindow.innerHTML = `
         <div><label>Endpoint:</label><input id="widgetEndpoint" style="width:100%"/></div>
@@ -1945,7 +1837,6 @@ export function criarIcone(chartContainer) {
       };
     }
 
-    // 9) Funções de leitura de dados
     async function handleFetch() {
       const endpoint = document.getElementById('widgetEndpoint').value;
       if (!endpoint) return alert('Informe o endpoint');
@@ -1973,7 +1864,6 @@ export function criarIcone(chartContainer) {
       reader.readAsText(file);
     }
 
-    // 10) Processa o JSON e exibe propriedades
     function processData(data) {
       if (!Array.isArray(data) || data.length === 0)
         return alert('O JSON deve ser um array não vazio');
@@ -1991,12 +1881,10 @@ export function criarIcone(chartContainer) {
       document.getElementById('widgetPropSelection').style.display = 'block';
     }
 
-    // 11) Carrega Chart.js dinamicamente, se necessário
     async function loadChartJS() {
       if (window.Chart) return;
       return new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        // UMD build, não ES module
         script.src =
           'https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js';
         script.onload = () => resolve();
@@ -2005,13 +1893,11 @@ export function criarIcone(chartContainer) {
       });
     }
 
-    // 12) Cria e posiciona cada gráfico com drag & resize customizado
     async function createChartForProp(prop) {
       if (!latestData) return alert('Carregue os dados primeiro');
       await loadChartJS();
       const type = document.getElementById('widgetChartType').value;
 
-      // 12.1) Wrapper absoluto
       const wrapper = document.createElement('div');
       wrapper.className = 'chart-wrapper';
       wrapper.style.top = '100px';
@@ -2019,7 +1905,6 @@ export function criarIcone(chartContainer) {
       wrapper.style.width = '400px';
       wrapper.style.height = '300px';
 
-      // 12.2) Título (drag handle), canvas e resize-handle
       const title = document.createElement('h3');
       title.textContent = `Gráfico: ${prop}`;
       title.style.margin = '0 0 8px';
@@ -2032,7 +1917,6 @@ export function criarIcone(chartContainer) {
       wrapper.append(title, canvas, resizeHandle);
       chartContainer.append(wrapper);
 
-      // 12.3) Seleção ao clicar
       wrapper.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         document
@@ -2048,7 +1932,6 @@ export function criarIcone(chartContainer) {
         }
       });
 
-      // 12.4) Drag pelo título
       let isDragging = false,
         dragX = 0,
         dragY = 0;
@@ -2079,7 +1962,6 @@ export function criarIcone(chartContainer) {
         wrapper.style.top = `${y}px`;
       }
 
-      // 12.5) Resize customizado pelo handle
       let isResizing = false,
         startX,
         startY,
@@ -2114,7 +1996,6 @@ export function criarIcone(chartContainer) {
         }
       }
 
-      // 12.6) Cria o gráfico e mantém instância para resize
       criarGrafico(
         canvas.getContext('2d'),
         type,
@@ -2126,7 +2007,6 @@ export function criarIcone(chartContainer) {
       chartEntry = todosOsGraficos[todosOsGraficos.length - 1];
       chartInstance = chartEntry && chartEntry.grafico;
 
-      // Fecha o widget após criar
       widgetWindow.classList.add('hidden');
     }
 
@@ -2139,7 +2019,6 @@ export function criarIcone(chartContainer) {
 function gerarCores(categorias) {
   return categorias.map(
     (_, i) =>
-      // cria tons equidistantes no círculo de matiz
       `hsl(${(i * 360) / categorias.length}, 70%, 50%)`,
   );
 }
